@@ -2095,6 +2095,10 @@ export type Database = {
       }
     }
     Functions: {
+      delete_my_account: {
+        Args: Record<PropertyKey, never>
+        Returns: undefined
+      }
       get_public_preview_posts: {
         Args: Record<PropertyKey, never>
         Returns: {

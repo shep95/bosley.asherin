@@ -65,6 +65,7 @@ export default function StorageMedia({
       loading={priority ? "eager" : "lazy"}
       decoding="async"
       fetchPriority={priority ? "high" : "low"}
+      referrerPolicy="no-referrer"
       onError={() => setFailed(true)}
     />
   );

@@ -35,6 +35,18 @@ jobs:
       - run: npm run build
       - run: npm audit --omit=dev --audit-level=high
 
+  secrets:
+    name: Secret scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
   edge-functions:
     name: Edge functions typecheck
     runs-on: ubuntu-latest

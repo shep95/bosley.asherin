@@ -10,10 +10,12 @@ interface AuthContextType {
   session: Session | null;
   loading: boolean;
   mfaRequired: boolean;
-  signUp: (email: string, password: string, username: string) => Promise<{ error: string | null }>;
-  signIn: (email: string, password: string) => Promise<{ error: string | null; mfaRequired?: boolean }>;
+  signUp: (email: string, password: string, username: string, captchaToken?: string) => Promise<{ error: string | null }>;
+  signIn: (email: string, password: string, captchaToken?: string) => Promise<{ error: string | null; mfaRequired?: boolean }>;
   signOut: () => Promise<void>;
   clearMfaRequired: () => Promise<boolean>;
+  resetPassword: (email: string) => Promise<{ error: string | null }>;
+  updatePassword: (newPassword: string) => Promise<{ error: string | null }>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -72,7 +74,12 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     };
   }, []);
 
-  const signUp = async (email: string, password: string, username: string): Promise<{ error: string | null }> => {
+  const signUp = async (
+    email: string,
+    password: string,
+    username: string,
+    captchaToken?: string
+  ): Promise<{ error: string | null }> => {
     try {
       // Sanitize inputs before any backend call
       const cleanEmail = sanitizeEmail(email);
@@ -117,7 +124,10 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         password,
         options: {
           emailRedirectTo: window.location.origin,
-          data: { username: cleanUsername }
+          data: { username: cleanUsername },
+          // Only forwarded when Turnstile is configured; GoTrue verifies it
+          // server-side when Bot and Abuse Protection is enabled.
+          ...(captchaToken ? { captchaToken } : {})
         }
       });
 
@@ -149,7 +159,11 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     }
   };
 
-  const signIn = async (email: string, password: string): Promise<{ error: string | null; mfaRequired?: boolean }> => {
+  const signIn = async (
+    email: string,
+    password: string,
+    captchaToken?: string
+  ): Promise<{ error: string | null; mfaRequired?: boolean }> => {
     try {
       const cleanEmail = sanitizeEmail(email);
 
@@ -159,9 +173,10 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         return { error: rateCheck.message || 'Account temporarily locked. Try again in 15 minutes.' };
       }
 
-      const { data, error } = await supabase.auth.signInWithPassword({
+      const { error } = await supabase.auth.signInWithPassword({
         email: cleanEmail,
-        password
+        password,
+        ...(captchaToken ? { options: { captchaToken } } : {})
       });
 
       if (error) {
@@ -188,6 +203,58 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     }
   };
 
+  /**
+   * Request a password-reset email. Deliberately returns `{ error: null }` for
+   * both success and auth-level failures (unknown email, rate limit, etc.) so
+   * the response can never be used to enumerate registered addresses. Only a
+   * transport failure surfaces as an error.
+   */
+  const resetPassword = async (email: string): Promise<{ error: string | null }> => {
+    const cleanEmail = sanitizeEmail(email);
+    if (!cleanEmail || !cleanEmail.includes('@')) {
+      return { error: 'Please enter a valid email address.' };
+    }
+    const networkError = 'Could not reach the server. Check your connection and try again.';
+    try {
+      const { error } = await supabase.auth.resetPasswordForEmail(cleanEmail, {
+        redirectTo: window.location.origin + '/reset-password',
+      });
+      // supabase-js reports fetch failures as a retryable error (status 0)
+      // rather than throwing; everything else is swallowed on purpose.
+      if (error && (error.name === 'AuthRetryableFetchError' || error.status === 0)) {
+        return { error: networkError };
+      }
+      return { error: null };
+    } catch {
+      return { error: networkError };
+    }
+  };
+
+  /**
+   * Set a new password on the current (recovery or regular) session. Enforces
+   * the same minimum length and breach check as sign-up.
+   */
+  const updatePassword = async (newPassword: string): Promise<{ error: string | null }> => {
+    try {
+      if (newPassword.length < 12) {
+        return { error: 'Password must be at least 12 characters.' };
+      }
+
+      const hibpResult = await checkPasswordBreached(newPassword);
+      if (hibpResult.breached) {
+        return { error: hibpResult.message };
+      }
+
+      const { error } = await supabase.auth.updateUser({ password: newPassword });
+      if (error) {
+        return { error: 'Unable to update password. The link may have expired — request a new one.' };
+      }
+      return { error: null };
+    } catch {
+      return { error: 'An unexpected error occurred' };
+    }
+  };
+
   const signOut = async () => {
     await supabase.auth.signOut();
     setMfaRequired(false);
@@ -207,7 +274,9 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   }, []);
 
   return (
-    <AuthContext.Provider value={{ user, session, loading, mfaRequired, signUp, signIn, signOut, clearMfaRequired }}>
+    <AuthContext.Provider
+      value={{ user, session, loading, mfaRequired, signUp, signIn, signOut, clearMfaRequired, resetPassword, updatePassword }}
+    >
       {children}
     </AuthContext.Provider>
   );

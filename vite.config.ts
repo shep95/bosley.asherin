@@ -14,6 +14,10 @@ export default defineConfig(({ mode }) => ({
   esbuild: mode === "production" ? { drop: ["console", "debugger"] } : undefined,
   build: {
     sourcemap: false,
+    // No inline <script> in index.html: the module-preload polyfill would
+    // force 'unsafe-inline' into the CSP, which is the one directive that
+    // matters against XSS. Modern browsers preload modules natively.
+    modulePreload: { polyfill: false },
     // A single 1 MB+ entry chunk meant nothing rendered until the entire app —
     // charts, motion, every Radix primitive — had parsed. Splitting the heavy,
     // rarely-changing vendors lets the landing page paint from a small entry
@@ -34,6 +38,8 @@ export default defineConfig(({ mode }) => ({
     react(),
     VitePWA({
       registerType: "autoUpdate",
+      // Emit registerSW.js as a file instead of an inline script (CSP).
+      injectRegister: "script-defer",
       includeAssets: ["favicon.png", "favicon-192.png", "robots.txt"],
       manifest: {
         name: "Bosley - Free Speech Social Platform",

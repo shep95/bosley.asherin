@@ -1,4 +1,5 @@
 import { useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import DashboardLayout from "@/components/layout/DashboardLayout";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
@@ -8,7 +9,8 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
-import { Loader2, Bell, Eye, Image, X, MessageSquare, Palette, Users, Download, EyeOff, Smartphone, ShieldCheck, ScrollText, Ban, Filter, Layers } from "lucide-react";
+import { Loader2, Bell, Eye, Image, X, MessageSquare, Palette, Users, Download, EyeOff, Smartphone, ShieldCheck, ScrollText, Ban, Filter, Layers, Trash2 } from "lucide-react";
+import { Input } from "@/components/ui/input";
 import Brandmark from "@/components/Brandmark";
 import { useToast } from "@/hooks/use-toast";
 import { useNotifications } from "@/hooks/useNotifications";
@@ -22,14 +24,18 @@ import { MFAEnrollModal } from "@/components/auth/MFAModals";
 import PageHeader from "@/components/layout/PageHeader";
 
 const Settings = () => {
-  const { user } = useAuth();
+  const { user, signOut } = useAuth();
   const { toast } = useToast();
+  const navigate = useNavigate();
   const queryClient = useQueryClient();
   const backgroundInputRef = useRef<HTMLInputElement>(null);
   const wallpaperInputRef = useRef<HTMLInputElement>(null);
   const { requestPermission, notificationPermission } = useNotifications();
   const [isExporting, setIsExporting] = useState(false);
   const [showMFAEnroll, setShowMFAEnroll] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [deleteConfirmText, setDeleteConfirmText] = useState("");
+  const [isDeleting, setIsDeleting] = useState(false);
 
   const { data: mfaFactors } = useQuery({
     queryKey: ['mfa-factors', user?.id],
@@ -85,7 +91,7 @@ const Settings = () => {
       if (!user) return null;
       const { data } = await supabase
         .from('profiles')
-        .select('custom_background_url, message_wallpaper_url')
+        .select('username, custom_background_url, message_wallpaper_url')
         .eq('user_id', user.id)
         .maybeSingle();
       return data;
@@ -264,6 +270,32 @@ const Settings = () => {
       });
     } finally {
       setIsExporting(false);
+    }
+  };
+
+  const deleteMatches =
+    !!profile?.username && deleteConfirmText.trim().toLowerCase() === profile.username.toLowerCase();
+
+  const handleDeleteAccount = async () => {
+    if (!user || !deleteMatches || isDeleting) return;
+    setIsDeleting(true);
+    try {
+      // Server-side SECURITY DEFINER function: removes every row owned by
+      // auth.uid() and the auth user itself. Nothing is passed from the client.
+      const { error } = await supabase.rpc('delete_my_account');
+      if (error) throw error;
+
+      await signOut();
+      queryClient.clear();
+      toast({ title: "your account and data are gone." });
+      navigate("/", { replace: true });
+    } catch {
+      toast({
+        title: "Couldn't delete account",
+        description: "Please try again in a moment.",
+        variant: "destructive",
+      });
+      setIsDeleting(false);
     }
   };
 
@@ -689,6 +721,70 @@ const Settings = () => {
               View a record of security-relevant actions on your account
             </p>
             <AuditLogViewer />
+          </div>
+
+          {/* Delete Account — quiet by design; the confirmation does the shouting */}
+          <div className="glass-card rounded-xl p-6">
+            <div className="flex items-center gap-2 mb-2">
+              <Trash2 className="w-5 h-5 text-foreground/60" />
+              <h2 className="text-lg font-light text-foreground">Delete Account</h2>
+            </div>
+            <p className="text-foreground/50 font-light text-sm mb-4">
+              Permanently removes your profile, posts, messages, media and settings. This cannot be undone.
+              Export your data first if you want a copy.
+            </p>
+
+            {!showDeleteConfirm ? (
+              <button
+                type="button"
+                onClick={() => setShowDeleteConfirm(true)}
+                className="text-sm font-light text-destructive/80 hover:text-destructive transition-colors"
+              >
+                delete my account
+              </button>
+            ) : (
+              <div className="space-y-3 pt-3 border-t border-border/20">
+                <Label htmlFor="delete-confirm" className="font-light text-foreground/80">
+                  Type your username{profile?.username ? <> <span className="text-foreground">{profile.username}</span></> : null} to confirm
+                </Label>
+                <Input
+                  id="delete-confirm"
+                  value={deleteConfirmText}
+                  onChange={(e) => setDeleteConfirmText(e.target.value)}
+                  placeholder={profile?.username ?? "your_username"}
+                  className="bg-background/50 border-border/50 rounded-lg font-light"
+                  autoComplete="off"
+                  autoFocus
+                  maxLength={30}
+                />
+                <div className="flex items-center gap-3">
+                  <Button
+                    onClick={handleDeleteAccount}
+                    disabled={!deleteMatches || isDeleting}
+                    variant="outline"
+                    size="sm"
+                    className="rounded-lg font-light text-destructive border-destructive/30 hover:bg-destructive/10 hover:text-destructive"
+                  >
+                    {isDeleting ? (
+                      <>
+                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                        deleting...
+                      </>
+                    ) : (
+                      "delete everything"
+                    )}
+                  </Button>
+                  <button
+                    type="button"
+                    onClick={() => { setShowDeleteConfirm(false); setDeleteConfirmText(""); }}
+                    disabled={isDeleting}
+                    className="text-sm font-light text-foreground/50 hover:text-foreground transition-colors"
+                  >
+                    cancel
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         </div>
 

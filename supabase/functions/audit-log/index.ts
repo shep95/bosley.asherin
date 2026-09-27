@@ -1,6 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-import { corsFor, securityHeaders } from "../_shared/cors.ts";
+import { corsFor, securityHeaders, clientIp } from "../_shared/cors.ts";
 
 Deno.serve(async (req) => {
   const corsHeaders = corsFor(req);
@@ -63,11 +63,14 @@ Deno.serve(async (req) => {
         );
       }
 
+      // Cap the free-form details blob so a client cannot bloat its own log.
+      const safeDetails =
+        details && typeof details === 'object' && JSON.stringify(details).length <= 2048 ? details : {};
       await supabase.rpc('record_audit_event', {
         p_user_id: user.id,
         p_action: event.slice(0, 100),
-        p_details: typeof details === 'object' ? details : {},
-        p_ip: req.headers.get('x-forwarded-for')?.split(',')[0]?.trim()?.slice(0, 45) || null,
+        p_details: safeDetails,
+        p_ip: clientIp(req),
         p_user_agent: req.headers.get('user-agent')?.slice(0, 500) || null
       });
 

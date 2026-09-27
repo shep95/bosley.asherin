@@ -55,8 +55,10 @@ export function extractStorageObjectPath(bucket: StorageBucket, value: string): 
     return decodeURIComponent(q === -1 ? after : after.substring(0, q));
   }
 
-  // Not one of ours — an external URL. Leave it untouched.
-  return value;
+  // Not one of ours. Third-party image URLs are a classic de-anonymisation
+  // trick (a "tracking pixel" avatar that logs every viewer's IP and time), so
+  // anything outside our own storage host is dropped rather than rendered.
+  return "";
 }
 
 function flush(bucket: StorageBucket) {
@@ -145,7 +147,7 @@ export function peekSignedUrl(bucket: StorageBucket, path: string): string | nul
  */
 export function useStorageUrl(bucket: StorageBucket, value: string | null | undefined) {
   const objectPath = useMemo(
-    () => (value ? extractStorageObjectPath(bucket, value) : null),
+    () => (value ? extractStorageObjectPath(bucket, value) || null : null),
     [bucket, value],
   );
   const needsSigning = !!objectPath && !objectPath.startsWith("http");

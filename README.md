@@ -82,6 +82,24 @@ What the codebase enforces, and where.
 - Passwords are checked against Have I Been Pwned with k-anonymity (only a 5-character hash prefix leaves the device).
 - OAuth and magic links use the PKCE flow.
 
+**abuse resistance (attacker model: a free account talking to PostgREST directly)** — see `supabase/migrations/20260927120000_abuse_resistance.sql`
+- Per-user write rate limits enforced by database triggers: posts 30/h, comments 60/h, direct and group messages 120/h, follows 100/h, likes and reactions 300/h, reposts 60/h, reports 20/h, anonymous questions 10/h per recipient. The service role is exempt.
+- Reply controls (`everyone` / `followers` / `following` / `mentioned` / closed), minimum account age and minimum follower count are enforced by a trigger on comments, not just hidden in the UI. Authors' mutes also block replies.
+- Direct messages are refused when the recipient has muted the sender or has message requests off and does not follow the sender. Recipients can mark messages read.
+- Stealth mode is enforced on profile views. Poll votes are one per user per poll.
+- `delete_my_account()` removes the auth user, every referencing row and every uploaded file. Password reset and optional Cloudflare Turnstile CAPTCHA (set `VITE_TURNSTILE_SITE_KEY` and enable it in Supabase → Auth → Bot and Abuse Protection) are wired in.
+- Edge functions read the client IP from the rightmost `X-Forwarded-For` entry (or `CF-Connecting-IP`), so a forged header cannot evade or redirect the login lockout.
+- Third-party image URLs are never rendered (tracking-pixel de-anonymisation), and every user image loads with `referrerpolicy="no-referrer"`.
+- The CSP allows scripts from the site itself only. The build emits no inline scripts.
+- Vulnerability scanner paths (`/.env`, `/.git/`, `/wp-login.php`, `*.php`, `*.sql`, …) get an instant 404 at the edge.
+- Dependabot, a gitleaks secret scan and `npm audit` run in CI. See `SECURITY.md` for the disclosure policy.
+
+**settings to apply in the Supabase dashboard** (not expressible in code)
+- API → Max rows: set to 100 (default 1000) to cap bulk reads per request.
+- Auth → Rate limits: keep the defaults or lower them; Auth → Bot and Abuse Protection → enable Turnstile if you set the site key.
+- Auth → Email: keep "secure email change" (double confirmation) on; require email confirmation for sign-ups.
+- Auth → URL configuration: only your production and preview origins in the redirect allow-list.
+
 **operational**
 - `.env` is git-ignored and untracked. The only values the browser bundle contains are the Supabase URL and the publishable (anon) key, which is by design public and gated by RLS.
 - Dependencies are pruned to what is imported; `npm audit` runs in CI.

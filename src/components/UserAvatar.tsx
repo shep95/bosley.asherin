@@ -65,6 +65,7 @@ const UserAvatar = ({
             className="w-full h-full object-cover"
             loading="lazy"
             decoding="async"
+            referrerPolicy="no-referrer"
           />
         ) : (
           <div className="w-full h-full flex items-center justify-center">

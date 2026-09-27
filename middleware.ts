@@ -46,10 +46,16 @@ const ALLOWED_UA = [
   /vercel-screenshot/i, /vercel-favicon/i, /Vercel Edge Functions/i,
 ];
 
+// Paths that only vulnerability scanners ask for. Answering 404 instantly (and
+// never reaching the SPA shell) keeps them out of logs and off the origin.
+const SCANNER_PATHS =
+  /^\/(\.env(\..*)?|\.git(\/.*)?|\.svn(\/.*)?|\.hg(\/.*)?|\.DS_Store|\.htaccess|\.htpasswd|wp-(admin|login|content|includes|json)(\/.*)?|wp-login\.php|xmlrpc\.php|phpmyadmin(\/.*)?|pma(\/.*)?|adminer(\.php)?|cgi-bin(\/.*)?|vendor\/phpunit(\/.*)?|\.aws(\/.*)?|\.ssh(\/.*)?|config\.(php|json|yml|yaml)|composer\.(json|lock)|package-lock\.json|server-status|actuator(\/.*)?|_debugbar(\/.*)?|telescope(\/.*)?|\.well-known\/openid-configuration)$/i;
+const SCANNER_EXTENSIONS = /\.(php|asp|aspx|jsp|cgi|pl|sh|bak|old|orig|sql|sqlite|db|log|ini|env|pem|key)$/i;
+
 const PRIVATE_PREFIXES = [
   "/dashboard", "/explore", "/search", "/notifications", "/messages", "/bookmarks", "/lists",
   "/communities", "/events", "/drafts", "/rules", "/templates", "/compose", "/calendar", "/profile",
-  "/settings", "/sponsors", "/scheduled", "/analytics", "/user/", "/post/",
+  "/settings", "/sponsors", "/scheduled", "/analytics", "/user/", "/post/", "/reset-password",
 ];
 
 function deny(status: number, reason: string): Response {
@@ -66,6 +72,10 @@ function deny(status: number, reason: string): Response {
 export default function middleware(request: Request) {
   const url = new URL(request.url);
   const ua = request.headers.get("user-agent") ?? "";
+
+  if (SCANNER_PATHS.test(url.pathname) || SCANNER_EXTENSIONS.test(url.pathname)) {
+    return deny(404, "Not found");
+  }
   const accept = request.headers.get("accept") ?? "";
   const wantsHtml = accept.includes("text/html") || accept === "*/*" || accept === "";
 

@@ -39,6 +39,7 @@ Disallow: /admin
 Disallow: /login
 Disallow: /signup
 Disallow: /recovery
+Disallow: /reset-password
 Disallow: /.git
 Disallow: /.svn
 Disallow: /.env

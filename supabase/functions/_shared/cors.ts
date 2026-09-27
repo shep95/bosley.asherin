@@ -65,3 +65,21 @@ export function json(
     headers: { ...cors, ...securityHeaders, "Content-Type": "application/json", ...extra },
   });
 }
+
+/**
+ * The client IP as seen by the platform edge.
+ *
+ * `x-forwarded-for` is a comma-separated chain; the LEFTMOST entry is whatever
+ * the client itself sent and can be forged ("X-Forwarded-For: 1.2.3.4"). Each
+ * trusted proxy appends the address it actually received the connection from,
+ * so the RIGHTMOST entry is the only one the caller could not choose.
+ * `cf-connecting-ip` is set by Cloudflare and preferred when present.
+ */
+export function clientIp(req: Request): string | null {
+  const cf = req.headers.get("cf-connecting-ip");
+  if (cf) return cf.trim().slice(0, 45);
+  const fwd = req.headers.get("x-forwarded-for") || "";
+  const parts = fwd.split(",").map((s) => s.trim()).filter(Boolean);
+  if (parts.length === 0) return null;
+  return parts[parts.length - 1].slice(0, 45);
+}

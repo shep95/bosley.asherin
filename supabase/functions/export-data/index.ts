@@ -1,7 +1,7 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
-import { corsFor } from "../_shared/cors.ts";
+import { corsFor, clientIp } from "../_shared/cors.ts";
 
 serve(async (req) => {
   const corsHeaders = corsFor(req, 'POST, GET, OPTIONS');
@@ -200,7 +200,7 @@ serve(async (req) => {
       p_user_id: user.id,
       p_action: 'data_export',
       p_details: {},
-      p_ip: req.headers.get('x-forwarded-for')?.split(',')[0]?.trim()?.slice(0, 45) ?? null,
+      p_ip: clientIp(req),
       p_user_agent: req.headers.get('user-agent')?.slice(0, 500) ?? null,
     });
 

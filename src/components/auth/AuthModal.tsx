@@ -11,6 +11,7 @@ import Brandmark from "@/components/Brandmark";
 import { useToast } from "@/hooks/use-toast";
 import { useNavigate } from "react-router-dom";
 import { MFAVerifyModal } from "./MFAModals";
+import Turnstile, { TURNSTILE_ENABLED } from "./Turnstile";
 import { supabase } from "@/integrations/supabase/client";
 
 interface AuthModalProps {
@@ -29,8 +30,13 @@ const AuthModal = ({ open, onOpenChange, defaultTab = "login" }: AuthModalProps)
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState<{[key: string]: string}>({});
   const [showMFA, setShowMFA] = useState(false);
+  const [view, setView] = useState<"auth" | "reset">("auth");
+  const [resetEmail, setResetEmail] = useState("");
+  // undefined = captcha not configured; null = waiting for a token; string = ready
+  const [captchaToken, setCaptchaToken] = useState<string | null | undefined>(TURNSTILE_ENABLED ? null : undefined);
+  const [captchaResetKey, setCaptchaResetKey] = useState(0);
   
-  const { signUp, signIn, clearMfaRequired } = useAuth();
+  const { signUp, signIn, clearMfaRequired, resetPassword } = useAuth();
   const navigate = useNavigate();
   const { toast } = useToast();
 
@@ -40,7 +46,19 @@ const AuthModal = ({ open, onOpenChange, defaultTab = "login" }: AuthModalProps)
     setPassword("");
     setConfirmPassword("");
     setErrors({});
+    // The widget remounts with the tab, so any old token is void.
+    if (TURNSTILE_ENABLED) setCaptchaToken(null);
   };
+
+  // Turnstile tokens are single-use: after any failed attempt the widget must
+  // issue a new one before the next submit.
+  const resetCaptcha = () => {
+    if (!TURNSTILE_ENABLED) return;
+    setCaptchaToken(null);
+    setCaptchaResetKey((k) => k + 1);
+  };
+
+  const captchaBlocked = TURNSTILE_ENABLED && !captchaToken;
 
   const validateSignUp = (): boolean => {
     const newErrors: {[key: string]: string} = {};
@@ -89,11 +107,14 @@ const AuthModal = ({ open, onOpenChange, defaultTab = "login" }: AuthModalProps)
     e.preventDefault();
     if (!validateSignUp()) return;
     
+    if (captchaBlocked) return;
+    
     setLoading(true);
-    const { error } = await signUp(email, password, username);
+    const { error } = await signUp(email, password, username, captchaToken ?? undefined);
     setLoading(false);
     
     if (error) {
+      resetCaptcha();
       toast({ title: "Error", description: error, variant: "destructive" });
     } else {
       toast({ title: "Welcome!", description: "Account created successfully." });
@@ -109,11 +130,14 @@ const AuthModal = ({ open, onOpenChange, defaultTab = "login" }: AuthModalProps)
       return;
     }
     
+    if (captchaBlocked) return;
+    
     setLoading(true);
-    const { error, mfaRequired } = await signIn(email, password);
+    const { error, mfaRequired } = await signIn(email, password, captchaToken ?? undefined);
     setLoading(false);
     
     if (error) {
+      resetCaptcha();
       toast({ title: "Error", description: error, variant: "destructive" });
     } else if (mfaRequired) {
       setShowMFA(true);
@@ -131,6 +155,34 @@ const AuthModal = ({ open, onOpenChange, defaultTab = "login" }: AuthModalProps)
     toast({ title: "Welcome back!", description: "Signed in successfully." });
     onOpenChange(false);
     navigate("/dashboard");
+  };
+
+  const handleResetPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!resetEmail.trim()) {
+      toast({ title: "Error", description: "Please enter your email", variant: "destructive" });
+      return;
+    }
+
+    setLoading(true);
+    const { error } = await resetPassword(resetEmail);
+    setLoading(false);
+
+    if (error) {
+      toast({ title: "Error", description: error, variant: "destructive" });
+      return;
+    }
+
+    // Deliberately neutral: never confirm whether the address has an account.
+    toast({ title: "check your inbox", description: "if that email has an account, a reset link is on its way." });
+    setResetEmail("");
+    setView("auth");
+  };
+
+  const openReset = () => {
+    // Carry over whatever they already typed so they don't have to retype it.
+    setResetEmail(email);
+    setView("reset");
   };
 
   const handleGoogle = async () => {
@@ -162,6 +214,44 @@ const AuthModal = ({ open, onOpenChange, defaultTab = "login" }: AuthModalProps)
               <span className="text-foreground font-light text-xl">Bosley</span>
             </div>
             
+            {view === "reset" ? (
+              <form onSubmit={handleResetPassword} className="space-y-4">
+                <div>
+                  <h2 className="text-foreground font-light text-lg">reset your password</h2>
+                  <p className="text-foreground/50 text-sm font-light mt-1">
+                    enter your email and we&apos;ll send you a link to choose a new one.
+                  </p>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="reset-email" className="text-foreground/80 font-light">Email</Label>
+                  <Input
+                    id="reset-email"
+                    type="email"
+                    value={resetEmail}
+                    onChange={(e) => setResetEmail(e.target.value)}
+                    placeholder="you@example.com"
+                    className="bg-background/50 border-border/50 rounded-xl h-12 font-light"
+                    autoComplete="email"
+                    maxLength={255}
+                    autoFocus
+                  />
+                </div>
+                <Button
+                  type="submit"
+                  disabled={loading}
+                  className="w-full h-12 rounded-xl font-light text-base bg-foreground text-background hover:bg-foreground/90"
+                >
+                  {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : "send reset link"}
+                </Button>
+                <button
+                  type="button"
+                  onClick={() => setView("auth")}
+                  className="block w-full text-center text-sm font-light text-foreground/50 hover:text-foreground transition-colors"
+                >
+                  back to sign in
+                </button>
+              </form>
+            ) : (
             <Tabs value={tab} onValueChange={(v) => { setTab(v); resetForm(); }} className="w-full">
               <TabsList className="grid w-full grid-cols-2 mb-6 bg-background/50 rounded-xl p-1">
                 <TabsTrigger value="login" className="rounded-lg font-light data-[state=active]:bg-foreground data-[state=active]:text-background">
@@ -229,13 +319,23 @@ const AuthModal = ({ open, onOpenChange, defaultTab = "login" }: AuthModalProps)
                     </div>
                   </div>
                   
+                  <Turnstile onToken={setCaptchaToken} resetKey={captchaResetKey} action="login" />
+                  
                   <Button
                     type="submit"
-                    disabled={loading}
+                    disabled={loading || captchaBlocked}
                     className="w-full h-12 rounded-xl font-light text-base bg-foreground text-background hover:bg-foreground/90"
                   >
                     {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : "Sign In"}
                   </Button>
+
+                  <button
+                    type="button"
+                    onClick={openReset}
+                    className="block w-full text-center text-sm font-light text-foreground/50 hover:text-foreground transition-colors"
+                  >
+                    forgot password?
+                  </button>
                 </form>
               </TabsContent>
               
@@ -302,9 +402,11 @@ const AuthModal = ({ open, onOpenChange, defaultTab = "login" }: AuthModalProps)
                     {errors.confirmPassword && <p className="text-destructive text-sm font-light">{errors.confirmPassword}</p>}
                   </div>
                   
+                  <Turnstile onToken={setCaptchaToken} resetKey={captchaResetKey} action="signup" />
+                  
                   <Button
                     type="submit"
-                    disabled={loading}
+                    disabled={loading || captchaBlocked}
                     className="w-full h-12 rounded-xl font-light text-base bg-foreground text-background hover:bg-foreground/90"
                   >
                     {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : "Create Account"}
@@ -312,6 +414,7 @@ const AuthModal = ({ open, onOpenChange, defaultTab = "login" }: AuthModalProps)
                 </form>
               </TabsContent>
             </Tabs>
+            )}
           </div>
         </DialogContent>
       </Dialog>

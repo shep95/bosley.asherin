@@ -1,6 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-import { corsFor, securityHeaders } from "../_shared/cors.ts";
+import { corsFor, securityHeaders, clientIp } from "../_shared/cors.ts";
 
 Deno.serve(async (req) => {
   const corsHeaders = corsFor(req);
@@ -30,9 +30,7 @@ Deno.serve(async (req) => {
 
     const body = await req.json();
     const { email, action, success } = body;
-    const fwd = req.headers.get("x-forwarded-for") || "";
-    const cfIp = req.headers.get("cf-connecting-ip") || "";
-    const realIp = (cfIp || fwd.split(",")[0] || "").trim().slice(0, 45) || null;
+    const realIp = clientIp(req);
 
     if (!email || typeof email !== "string" || email.length > 255) {
       return new Response(JSON.stringify({ error: "Valid email is required" }), {

@@ -24,6 +24,7 @@ const UserProfile = lazy(() => import("./pages/UserProfile"));
 const Settings = lazy(() => import("./pages/Settings"));
 const Sponsors = lazy(() => import("./pages/Sponsors"));
 const Install = lazy(() => import("./pages/Install"));
+const ResetPassword = lazy(() => import("./pages/ResetPassword"));
 const PostDetail = lazy(() => import("./pages/PostDetail"));
 const Notifications = lazy(() => import("./pages/Notifications"));
 const ScheduledPosts = lazy(() => import("./pages/ScheduledPosts"));
@@ -298,6 +299,7 @@ const AppRoutes = () => {
         }
       />
       <Route path="/install" element={<Install />} />
+      <Route path="/reset-password" element={<ResetPassword />} />
       <Route path="*" element={<NotFound />} />
       </Routes>
     </Suspense>
