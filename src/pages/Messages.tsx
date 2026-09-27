@@ -1,17 +1,16 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, Fragment } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import DashboardLayout from "@/components/layout/DashboardLayout";
+import PageHeader from "@/components/layout/PageHeader";
+import EmptyState from "@/components/ui/empty-state";
 import UserAvatar from "@/components/UserAvatar";
 import MessageBubble from "@/components/messages/MessageBubble";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { 
-  MessageSquare, Send, Loader2, Search, ArrowLeft, Plus, Check, X, Inbox, Users, Timer, Eye
+import {
+  Loader2, ArrowLeft, Plus, Check, X, Users, Timer, Eye, MoreHorizontal, Reply
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import {
@@ -26,6 +25,12 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { useNotifications } from "@/hooks/useNotifications";
 import { escapeFilterValue, cssUrl } from "@/lib/sanitize";
 import "@/styles/message-protection.css";
@@ -79,6 +84,88 @@ interface GroupChat {
   last_message_time?: string;
 }
 
+type ListTab = "all" | "groups" | "requests";
+type ListItem = { kind: "dm"; conv: Conversation } | { kind: "group"; group: GroupChat };
+
+/** "6m", "2h", "3d", then "12 sep". Short enough to sit at the end of a row. */
+const shortTime = (dateString?: string) => {
+  if (!dateString) return "";
+  const date = new Date(dateString);
+  const diff = Date.now() - date.getTime();
+  const minutes = Math.floor(diff / 60000);
+  if (minutes < 1) return "now";
+  if (minutes < 60) return `${minutes}m`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h`;
+  const days = Math.floor(hours / 24);
+  if (days < 7) return `${days}d`;
+  return date.toLocaleDateString("en-US", { day: "numeric", month: "short" }).toLowerCase();
+};
+
+const dayKey = (dateString: string) => new Date(dateString).toDateString();
+
+const dayLabel = (dateString: string) => {
+  const date = new Date(dateString);
+  const today = new Date();
+  const yesterday = new Date();
+  yesterday.setDate(today.getDate() - 1);
+  if (date.toDateString() === today.toDateString()) return "today";
+  if (date.toDateString() === yesterday.toDateString()) return "yesterday";
+  return date
+    .toLocaleDateString("en-US", {
+      weekday: "short",
+      day: "numeric",
+      month: "short",
+      year: date.getFullYear() !== today.getFullYear() ? "numeric" : undefined,
+    })
+    .toLowerCase();
+};
+
+/**
+ * Runs of messages: same sender, same day, less than ten minutes apart.
+ * A run shares one timestamp and one avatar, so the thread reads as speech,
+ * not as a log.
+ */
+const groupRuns = <T extends { id: string; sender_id: string; created_at: string }>(list: T[]) => {
+  const runs: { day: string; sender_id: string; items: T[] }[] = [];
+  for (const m of list) {
+    const day = dayKey(m.created_at);
+    const last = runs[runs.length - 1];
+    const prev = last?.items[last.items.length - 1];
+    const close = prev ? new Date(m.created_at).getTime() - new Date(prev.created_at).getTime() < 10 * 60 * 1000 : false;
+    if (last && last.sender_id === m.sender_id && last.day === day && close) last.items.push(m);
+    else runs.push({ day, sender_id: m.sender_id, items: [m] });
+  }
+  return runs;
+};
+
+const ListSkeleton = ({ count = 4 }: { count?: number }) => (
+  <div className="stagger" aria-busy="true" aria-label="loading conversations">
+    {Array.from({ length: count }).map((_, i) => (
+      <div key={i} className="row px-5 sm:px-8 py-4 flex items-center gap-3" style={{ "--i": i } as React.CSSProperties}>
+        <div className="w-8 h-8 rounded-full bg-foreground/[0.07] animate-pulse shrink-0" />
+        <div className="flex-1 space-y-2">
+          <div className="h-3 w-24 rounded bg-foreground/[0.08] animate-pulse" />
+          <div className="h-3 w-4/5 rounded bg-foreground/[0.06] animate-pulse" />
+        </div>
+      </div>
+    ))}
+  </div>
+);
+
+const ThreadSkeleton = () => (
+  <div className="flex flex-col gap-3 px-5 sm:px-8 py-6" aria-busy="true" aria-label="loading messages">
+    {[0, 1, 0, 0, 1].map((mine, i) => (
+      <div key={i} className={`flex ${mine ? "justify-end" : "justify-start"}`}>
+        <div
+          className={`h-9 rounded-md bg-foreground/[0.06] animate-pulse ${["w-2/5", "w-1/3", "w-1/2", "w-1/4", "w-2/5"][i]}`}
+          style={{ animationDelay: `${i * 60}ms` }}
+        />
+      </div>
+    ))}
+  </div>
+);
+
 const Messages = () => {
   const [selectedUser, setSelectedUser] = useState<Conversation | null>(null);
   const [selectedGroup, setSelectedGroup] = useState<GroupChat | null>(null);
@@ -91,8 +178,7 @@ const Messages = () => {
   const [newGroupName, setNewGroupName] = useState("");
   const [selectedMembers, setSelectedMembers] = useState<string[]>([]);
   const [memberSearchQuery, setMemberSearchQuery] = useState("");
-  const [activeTab, setActiveTab] = useState("messages");
-  const [chatType, setChatType] = useState<"direct" | "groups">("direct");
+  const [activeTab, setActiveTab] = useState<ListTab>("all");
   const [replyTo, setReplyTo] = useState<{ id: string; content: string; senderName: string } | null>(null);
   const [messageTTL, setMessageTTL] = useState<string | null>(null);
   const [viewOnce, setViewOnce] = useState(false);
@@ -546,7 +632,7 @@ const Messages = () => {
       queryClient.invalidateQueries({ queryKey: ['conversations'] });
     },
     onError: (error) => {
-      toast({ title: "Error", description: error.message, variant: "destructive" });
+      toast({ title: "not sent", description: error.message, variant: "destructive" });
     }
   });
 
@@ -569,7 +655,7 @@ const Messages = () => {
       queryClient.invalidateQueries({ queryKey: ['group-chats'] });
     },
     onError: (error) => {
-      toast({ title: "Error", description: error.message, variant: "destructive" });
+      toast({ title: "not sent", description: error.message, variant: "destructive" });
     }
   });
 
@@ -589,7 +675,7 @@ const Messages = () => {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['messages', selectedUser?.user_id] });
       queryClient.invalidateQueries({ queryKey: ['conversations'] });
-      toast({ title: "Message deleted" });
+      toast({ title: "message deleted" });
     }
   });
 
@@ -674,10 +760,10 @@ const Messages = () => {
       setSelectedMembers([]);
       setNewGroupOpen(false);
       queryClient.invalidateQueries({ queryKey: ['group-chats'] });
-      toast({ title: "Group created!" });
+      toast({ title: "group created" });
     },
     onError: (error) => {
-      toast({ title: "Error", description: error.message, variant: "destructive" });
+      toast({ title: "group not created", description: error.message, variant: "destructive" });
     }
   });
 
@@ -692,7 +778,7 @@ const Messages = () => {
         .eq('username', newMessageRecipient.trim())
         .single();
       
-      if (!profile) throw new Error("User not found");
+      if (!profile) throw new Error("no one has that username. check the spelling.");
       
       const { error } = await supabase.from('messages').insert({
         sender_id: user.id,
@@ -722,10 +808,10 @@ const Messages = () => {
       setNewConversationMessage("");
       setNewConversationOpen(false);
       queryClient.invalidateQueries({ queryKey: ['conversations'] });
-      toast({ title: "Message sent!" });
+      toast({ title: "message sent" });
     },
     onError: (error) => {
-      toast({ title: "Error", description: error.message, variant: "destructive" });
+      toast({ title: "not sent", description: error.message, variant: "destructive" });
     }
   });
 
@@ -741,7 +827,7 @@ const Messages = () => {
       unread: false
     });
     setSelectedGroup(null);
-    setActiveTab("messages");
+    setActiveTab("all");
   };
 
   const declineRequest = async (request: MessageRequest) => {
@@ -754,7 +840,7 @@ const Messages = () => {
       .eq('receiver_id', user.id);
     
     queryClient.invalidateQueries({ queryKey: ['message-requests'] });
-    toast({ title: "Request declined" });
+    toast({ title: "request declined" });
   };
 
   const handleSend = (e: React.FormEvent) => {
@@ -770,8 +856,8 @@ const Messages = () => {
 
   const handleReply = (messageId: string, content: string) => {
     const senderName = messages?.find(m => m.id === messageId)?.sender_id === user?.id 
-      ? 'You' 
-      : selectedUser?.display_name || selectedUser?.username || 'User';
+      ? 'you'
+      : selectedUser?.display_name || selectedUser?.username || 'them';
     setReplyTo({ id: messageId, content, senderName });
   };
 
@@ -783,7 +869,7 @@ const Messages = () => {
     deleteMessage.mutate(messageId);
   };
 
-  const startConversation = (profile: any) => {
+  const startConversation = (profile: { user_id: string; username: string; display_name: string | null; avatar_url: string | null }) => {
     setSelectedUser({
       id: profile.user_id,
       user_id: profile.user_id,
@@ -841,11 +927,6 @@ const Messages = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.id, targetUserId, loadingConversations]);
 
-  const formatTime = (dateString: string) => {
-    const date = new Date(dateString);
-    return date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
-  };
-
   const toggleMember = (userId: string) => {
     setSelectedMembers(prev => 
       prev.includes(userId) 
@@ -860,621 +941,570 @@ const Messages = () => {
     ? { backgroundImage: wallpaperUrl, backgroundSize: 'cover', backgroundPosition: 'center' }
     : {};
 
-  return (
-    <DashboardLayout>
-      <div className="h-[calc(100vh-4rem)] lg:h-screen flex">
-        {/* Conversations list */}
-        <div className={`w-full lg:w-80 border-r border-border/20 flex flex-col ${selectedUser || selectedGroup ? 'hidden lg:flex' : 'flex'}`}>
-          <div className="p-4 border-b border-foreground/5 backdrop-blur-xl bg-background/70">
-            <div className="flex items-center justify-between mb-3">
-              <div className="min-w-0">
-                <h1 className="text-xl font-semibold tracking-tight text-foreground">Messages</h1>
-                <div className="flex items-center gap-2 mt-1">
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                  <span className="text-[10px] text-foreground/50 uppercase font-medium tracking-wider">
-                    Transport secured with HTTPS
-                  </span>
-                </div>
-              </div>
-              
-              <div className="flex gap-1">
-                <Dialog open={newGroupOpen} onOpenChange={setNewGroupOpen}>
-                  <DialogTrigger asChild>
-                    <Button variant="ghost" size="icon" className="rounded-lg">
-                      <Users className="w-5 h-5" />
-                    </Button>
-                  </DialogTrigger>
-                  <DialogContent className="glass-panel border">
-                    <DialogHeader>
-                      <DialogTitle className="font-light">Create Group</DialogTitle>
-                    </DialogHeader>
-                    <div className="space-y-4 mt-4">
-                      <Input
-                        value={newGroupName}
-                        onChange={(e) => setNewGroupName(e.target.value)}
-                        placeholder="Group name"
-                        className="bg-background/50 border-border/50 rounded-lg font-light"
-                      />
-                      <div>
-                        <p className="text-sm text-foreground/60 font-light mb-2">Add members</p>
-                        <Input
-                          value={memberSearchQuery}
-                          onChange={(e) => setMemberSearchQuery(e.target.value)}
-                          placeholder="Search users..."
-                          className="bg-background/50 border-border/50 rounded-lg font-light"
-                        />
-                        {memberSearchResults && memberSearchResults.length > 0 && (
-                          <div className="mt-2 glass-card rounded-xl p-2 space-y-1 max-h-40 overflow-y-auto">
-                            {memberSearchResults.map((profile) => (
-                              <button
-                                key={profile.user_id}
-                                onClick={() => toggleMember(profile.user_id)}
-                                className={`w-full flex items-center gap-2 p-2 rounded-lg transition-colors ${
-                                  selectedMembers.includes(profile.user_id) ? 'bg-foreground/20' : 'hover:bg-accent/30'
-                                }`}
-                              >
-                                <UserAvatar avatarUrl={profile.avatar_url} size="sm" />
-                                <span className="text-foreground font-light text-sm flex-1 text-left">
-                                  @{profile.username}
-                                </span>
-                                {selectedMembers.includes(profile.user_id) && (
-                                  <Check className="w-4 h-4 text-green-500" />
-                                )}
-                              </button>
-                            ))}
-                          </div>
-                        )}
-                        {selectedMembers.length > 0 && (
-                          <p className="text-xs text-foreground/50 mt-2 font-light">
-                            {selectedMembers.length} member(s) selected
-                          </p>
-                        )}
-                      </div>
-                      <Button
-                        onClick={() => createGroupChat.mutate()}
-                        disabled={!newGroupName.trim() || selectedMembers.length === 0 || createGroupChat.isPending}
-                        className="w-full rounded-lg bg-foreground text-background"
-                      >
-                        {createGroupChat.isPending ? (
-                          <Loader2 className="w-4 h-4 animate-spin" />
-                        ) : (
-                          <>
-                            <Users className="w-4 h-4 mr-2" />
-                            Create Group
-                          </>
-                        )}
-                      </Button>
-                    </div>
-                  </DialogContent>
-                </Dialog>
+  // ---------- presentation only from here ----------
+  const threadOpen = !!(selectedUser || selectedGroup);
+  const requestCount = messageRequests?.length ?? 0;
+  const q = searchQuery.trim().toLowerCase();
 
-                <Dialog open={newConversationOpen} onOpenChange={setNewConversationOpen}>
-                  <DialogTrigger asChild>
-                    <Button variant="ghost" size="icon" className="rounded-lg">
-                      <Plus className="w-5 h-5" />
-                    </Button>
-                  </DialogTrigger>
-                  <DialogContent className="glass-panel border">
-                    <DialogHeader>
-                      <DialogTitle className="font-light">New Message</DialogTitle>
-                    </DialogHeader>
-                    <div className="space-y-4 mt-4">
-                      <Input
-                        value={newMessageRecipient}
-                        onChange={(e) => setNewMessageRecipient(e.target.value)}
-                        placeholder="Username"
-                        className="bg-background/50 border-border/50 rounded-lg font-light"
-                      />
-                      <Textarea
-                        value={newConversationMessage}
-                        onChange={(e) => setNewConversationMessage(e.target.value)}
-                        placeholder="Write your message..."
-                        className="bg-background/50 border-border/50 rounded-lg font-light resize-none min-h-[100px]"
-                      />
-                      <Button
-                        onClick={() => startNewConversation.mutate()}
-                        disabled={!newMessageRecipient.trim() || !newConversationMessage.trim() || startNewConversation.isPending}
-                        className="w-full rounded-lg bg-foreground text-background"
-                      >
-                        {startNewConversation.isPending ? (
-                          <Loader2 className="w-4 h-4 animate-spin" />
-                        ) : (
-                          <>
-                            <Send className="w-4 h-4 mr-2" />
-                            Send Message
-                          </>
-                        )}
-                      </Button>
-                    </div>
-                  </DialogContent>
-                </Dialog>
-              </div>
-            </div>
+  // One list. Direct conversations and groups sit together, newest first;
+  // the "groups" tab only narrows it.
+  const allItems: ListItem[] = [
+    ...(conversations ?? []).map((conv) => ({ kind: "dm" as const, conv })),
+    ...(groupChats ?? []).map((group) => ({ kind: "group" as const, group })),
+  ].sort((a, b) => {
+    const ta = a.kind === "dm" ? a.conv.last_message_time : a.group.last_message_time ?? "";
+    const tb = b.kind === "dm" ? b.conv.last_message_time : b.group.last_message_time ?? "";
+    return tb.localeCompare(ta);
+  });
+  const itemName = (item: ListItem) =>
+    item.kind === "dm" ? `${item.conv.display_name ?? ""} ${item.conv.username}` : item.group.name;
+  const visibleItems = (activeTab === "groups" ? allItems.filter((i) => i.kind === "group") : allItems).filter(
+    (i) => !q || itemName(i).toLowerCase().includes(q)
+  );
+  const knownIds = new Set((conversations ?? []).map((c) => c.user_id));
+  const people = (searchResults ?? []).filter((p) => !knownIds.has(p.user_id));
+  const loadingList = activeTab === "groups" ? loadingGroups : loadingConversations || loadingGroups;
 
-            <Tabs value={activeTab} onValueChange={setActiveTab} className="mb-4">
-              <TabsList className="p-1 glass-inset rounded-xl flex items-center gap-1 w-full h-auto">
-                <TabsTrigger value="messages" className="flex-1 px-3 py-2 rounded-lg text-xs font-medium transition-all duration-200 ease-soft text-foreground/60 hover:text-foreground data-[state=active]:bg-foreground/[0.12] data-[state=active]:text-foreground data-[state=active]:shadow-card">
-                  Chats
-                </TabsTrigger>
-                <TabsTrigger value="requests" className="flex-1 px-3 py-2 rounded-lg text-xs font-medium transition-all duration-200 ease-soft text-foreground/60 hover:text-foreground data-[state=active]:bg-foreground/[0.12] data-[state=active]:text-foreground data-[state=active]:shadow-card relative">
-                  Requests
-                  {messageRequests && messageRequests.length > 0 && (
-                    <span className="absolute -top-1 -right-1 w-4 h-4 bg-destructive text-destructive-foreground text-xs rounded-full flex items-center justify-center">
-                      {messageRequests.length}
-                    </span>
-                  )}
-                </TabsTrigger>
-              </TabsList>
-            </Tabs>
+  const openItem = (item: ListItem) => {
+    if (item.kind === "dm") {
+      setSelectedUser(item.conv);
+      setSelectedGroup(null);
+    } else {
+      setSelectedGroup(item.group);
+      setSelectedUser(null);
+    }
+  };
+  const closeThread = () => {
+    setSelectedUser(null);
+    setSelectedGroup(null);
+  };
 
-            {activeTab === "messages" && (
-              <>
-                <div className="flex gap-1 mb-3 p-1 glass-inset rounded-xl">
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => setChatType("direct")}
-                    aria-pressed={chatType === "direct"}
-                    className={`flex-1 rounded-lg text-xs font-medium press ${chatType === "direct" ? 'bg-foreground/[0.12] text-foreground shadow-card' : 'text-foreground/60 hover:text-foreground'}`}
-                  >
-                    Direct
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => setChatType("groups")}
-                    aria-pressed={chatType === "groups"}
-                    className={`flex-1 rounded-lg text-xs font-medium press ${chatType === "groups" ? 'bg-foreground/[0.12] text-foreground shadow-card' : 'text-foreground/60 hover:text-foreground'}`}
-                  >
-                    Groups
-                  </Button>
-                </div>
+  const threadName = selectedUser ? selectedUser.display_name || selectedUser.username : selectedGroup?.name ?? "";
+  const sending = selectedGroup ? sendGroupMessage.isPending : sendMessage.isPending;
 
-                {chatType === "direct" && (
-                  <div className="relative">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-foreground/40" />
-                    <Input
-                      value={searchQuery}
-                      onChange={(e) => setSearchQuery(e.target.value)}
-                      placeholder="Search users..."
-                      className="pl-10 bg-background/50 border-border/50 rounded-lg font-light"
-                    />
-                  </div>
-                )}
-                
-                {searchResults && searchResults.length > 0 && (
-                  <div className="mt-2 glass-card rounded-xl p-2 space-y-1">
-                    {searchResults.map((profile) => (
+  const GroupMark = ({ className = "" }: { className?: string }) => (
+    <span className={`w-8 h-8 rounded-full bg-foreground/[0.06] flex items-center justify-center shrink-0 ${className}`} aria-hidden>
+      <Users className="w-[15px] h-[15px] text-foreground/60" />
+    </span>
+  );
+
+  const renderRuns = <T extends { id: string; sender_id: string; created_at: string }>(
+    list: T[],
+    render: (msg: T, isFirst: boolean, isLast: boolean) => React.ReactNode
+  ) => {
+    let prevDay = "";
+    return groupRuns(list).map((run) => {
+      const showDay = run.day !== prevDay;
+      prevDay = run.day;
+      return (
+        <Fragment key={run.items[0].id}>
+          {showDay && (
+            <p className="text-center text-[11px] font-light text-foreground/35 select-none">{dayLabel(run.items[0].created_at)}</p>
+          )}
+          <div className="flex flex-col gap-2">
+            {run.items.map((m, i) => render(m, i === 0, i === run.items.length - 1))}
+          </div>
+        </Fragment>
+      );
+    });
+  };
+
+  const tabs: { id: ListTab; label: string }[] = [
+    { id: "all", label: "all" },
+    { id: "groups", label: "groups" },
+    { id: "requests", label: "requests" },
+  ];
+
+  const headerActions = (
+    <>
+      <Dialog open={newGroupOpen} onOpenChange={setNewGroupOpen}>
+        <DialogTrigger asChild>
+          <button aria-label="new group" title="new group" className="quiet p-2 rounded-md">
+            <Users className="w-4 h-4" />
+          </button>
+        </DialogTrigger>
+        <DialogContent className="glass-panel border rounded-md sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-[20px] font-extralight lowercase tracking-[-0.02em]">new group</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-5 mt-1">
+            <input
+              value={newGroupName}
+              onChange={(e) => setNewGroupName(e.target.value)}
+              placeholder="group name."
+              aria-label="group name"
+              className="field w-full h-10 text-[15px] font-light text-foreground placeholder:text-foreground/35"
+            />
+            <div>
+              <input
+                value={memberSearchQuery}
+                onChange={(e) => setMemberSearchQuery(e.target.value)}
+                placeholder="add people."
+                aria-label="add people"
+                className="field w-full h-10 text-[14px] font-light text-foreground placeholder:text-foreground/35"
+              />
+              {memberSearchResults && memberSearchResults.length > 0 && (
+                <div className="mt-1 max-h-44 overflow-y-auto">
+                  {memberSearchResults.map((profile) => {
+                    const on = selectedMembers.includes(profile.user_id);
+                    return (
                       <button
                         key={profile.user_id}
-                        onClick={() => startConversation(profile)}
-                        className="w-full flex items-center gap-3 p-2 rounded-lg hover:bg-accent/30 transition-colors"
+                        onClick={() => toggleMember(profile.user_id)}
+                        aria-pressed={on}
+                        className="row w-full flex items-center gap-3 px-1 py-2.5 text-left"
                       >
-                        <UserAvatar avatarUrl={profile.avatar_url} size="sm" />
-                        <span className="text-foreground font-light text-sm">@{profile.username}</span>
+                        <UserAvatar avatarUrl={profile.avatar_url} username={profile.username} size="sm" />
+                        <span className={`flex-1 min-w-0 truncate text-[14px] font-light ${on ? "text-foreground" : "text-foreground/70"}`}>
+                          {profile.display_name || profile.username}
+                          <span className="text-foreground/40 ml-2">@{profile.username}</span>
+                        </span>
+                        {on && <Check className="w-4 h-4 text-foreground/70" />}
                       </button>
-                    ))}
-                  </div>
-                )}
-              </>
-            )}
-          </div>
-          
-          <div className="flex-1 overflow-y-auto">
-            {activeTab === "messages" ? (
-              chatType === "direct" ? (
-                loadingConversations ? (
-                  <div className="flex items-center justify-center py-12">
-                    <Loader2 className="w-6 h-6 animate-spin text-foreground/60" />
-                  </div>
-                ) : conversations && conversations.length > 0 ? (
-                  <div className="p-2 space-y-1">
-                    {conversations.map((conv) => (
-                      <button
-                        key={conv.id}
-                        onClick={() => {
-                          setSelectedUser(conv);
-                          setSelectedGroup(null);
-                        }}
-                        className={`w-full flex items-center gap-3 p-3 rounded-lg transition-colors ${
-                          selectedUser?.id === conv.id ? 'bg-accent/30' : 'hover:bg-accent/20'
-                        }`}
-                      >
-                        <UserAvatar 
-                          avatarUrl={conv.avatar_url} 
-                          username={conv.username}
-                          size="md" 
-                        />
-                        <div className="flex-1 min-w-0 text-left">
-                          <p className="text-foreground font-normal truncate">
-                            {conv.display_name || conv.username}
-                          </p>
-                          <p className="text-foreground/40 text-sm font-light truncate">
-                            {conv.last_message}
-                          </p>
-                        </div>
-                        {conv.unread && (
-                          <div className="w-2 h-2 rounded-full bg-primary" />
-                        )}
-                      </button>
-                    ))}
-                  </div>
-                ) : (
-                  <div className="p-8 text-center">
-                    <Inbox className="w-12 h-12 mx-auto text-foreground/20 mb-3" />
-                    <p className="text-foreground/40 font-light text-sm">
-                      No conversations yet
-                    </p>
-                  </div>
-                )
-              ) : (
-                loadingGroups ? (
-                  <div className="flex items-center justify-center py-12">
-                    <Loader2 className="w-6 h-6 animate-spin text-foreground/60" />
-                  </div>
-                ) : groupChats && groupChats.length > 0 ? (
-                  <div className="p-2 space-y-1">
-                    {groupChats.map((group) => (
-                      <button
-                        key={group.id}
-                        onClick={() => {
-                          setSelectedGroup(group);
-                          setSelectedUser(null);
-                        }}
-                        className={`w-full flex items-center gap-3 p-3 rounded-lg transition-colors ${
-                          selectedGroup?.id === group.id ? 'bg-accent/30' : 'hover:bg-accent/20'
-                        }`}
-                      >
-                        <div className="w-12 h-12 rounded-lg bg-accent flex items-center justify-center flex-shrink-0">
-                          <Users className="w-6 h-6 text-foreground/60" />
-                        </div>
-                        <div className="flex-1 min-w-0 text-left">
-                          <p className="text-foreground font-normal truncate">
-                            {group.name}
-                          </p>
-                          <p className="text-foreground/40 text-sm font-light truncate">
-                            {group.member_count} members
-                          </p>
-                        </div>
-                      </button>
-                    ))}
-                  </div>
-                ) : (
-                  <div className="p-8 text-center">
-                    <Users className="w-12 h-12 mx-auto text-foreground/20 mb-3" />
-                    <p className="text-foreground/40 font-light text-sm">
-                      No groups yet
-                    </p>
-                    <p className="text-foreground/30 font-light text-xs mt-1">
-                      Click the group icon to create one
-                    </p>
-                  </div>
-                )
-              )
-            ) : (
-              loadingRequests ? (
-                <div className="flex items-center justify-center py-12">
-                  <Loader2 className="w-6 h-6 animate-spin text-foreground/60" />
-                </div>
-              ) : messageRequests && messageRequests.length > 0 ? (
-                <div className="p-2 space-y-2">
-                  {messageRequests.map((request) => (
-                    <div key={request.id} className="glass-card rounded-xl p-4">
-                      <div className="flex items-start gap-3">
-                        <UserAvatar avatarUrl={request.sender_avatar_url} size="md" />
-                        <div className="flex-1 min-w-0">
-                          <p className="text-foreground font-normal">
-                            {request.sender_display_name || request.sender_username}
-                          </p>
-                          <p className="text-foreground/40 text-sm font-light">
-                            @{request.sender_username}
-                          </p>
-                          <p className="text-foreground/70 text-sm font-light mt-2 line-clamp-2">
-                            {request.message}
-                          </p>
-                        </div>
-                      </div>
-                      <div className="flex gap-2 mt-3">
-                        <Button
-                          onClick={() => acceptRequest(request)}
-                          size="sm"
-                          className="flex-1 rounded-lg bg-foreground text-background"
-                        >
-                          <Check className="w-4 h-4 mr-1" />
-                          Accept
-                        </Button>
-                        <Button
-                          onClick={() => declineRequest(request)}
-                          size="sm"
-                          variant="ghost"
-                          className="flex-1 rounded-lg"
-                        >
-                          <X className="w-4 h-4 mr-1" />
-                          Decline
-                        </Button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <div className="p-8 text-center">
-                  <Inbox className="w-12 h-12 mx-auto text-foreground/20 mb-3" />
-                  <p className="text-foreground/40 font-light text-sm">
-                    No message requests
-                  </p>
-                </div>
-              )
-            )}
-          </div>
-        </div>
-        
-        {/* Chat area */}
-        <div className={`flex-1 flex flex-col ${selectedUser || selectedGroup ? 'flex' : 'hidden lg:flex'}`}>
-          {selectedUser ? (
-            <>
-              <div className="p-4 border-b border-border/20 flex items-center gap-3">
-                <button 
-                  onClick={() => setSelectedUser(null)}
-                  className="lg:hidden text-foreground/60 hover:text-foreground"
-                >
-                  <ArrowLeft className="w-5 h-5" />
-                </button>
-                <UserAvatar 
-                  avatarUrl={selectedUser.avatar_url} 
-                  username={selectedUser.username}
-                  size="md" 
-                />
-                <div>
-                  <p className="text-foreground font-normal">
-                    {selectedUser.display_name || selectedUser.username}
-                  </p>
-                  <p className="text-foreground/40 text-sm font-light">
-                    @{selectedUser.username}
-                  </p>
-                </div>
-              </div>
-              
-              {/* Messages with anti-screenshot protection */}
-              <div 
-                className="flex-1 overflow-y-auto p-4 space-y-3 message-container message-protected message-watermark"
-                style={wallpaperStyle}
-              >
-                {loadingMessages ? (
-                  <div className="flex items-center justify-center py-12">
-                    <Loader2 className="w-6 h-6 animate-spin text-foreground/60" />
-                  </div>
-                ) : messages && messages.length > 0 ? (
-                  <>
-                    {messages.map((msg) => (
-                      <MessageBubble
-                        key={msg.id}
-                        id={msg.id}
-                        content={msg.content}
-                        senderId={msg.sender_id}
-                        currentUserId={user?.id || ''}
-                        createdAt={msg.created_at}
-                        readAt={msg.read_at}
-                        replyTo={msg.reply_to ? {
-                          id: msg.reply_to.id,
-                          content: msg.reply_to.content,
-                          senderName: msg.reply_to.sender_id === user?.id ? 'You' : (selectedUser.display_name || selectedUser.username)
-                        } : null}
-                        onDelete={handleDeleteMessage}
-                        onReply={handleReply}
-                        onReact={handleReact}
-                        reactions={reactions?.get(msg.id) || []}
-                      />
-                    ))}
-                    <div ref={messagesEndRef} />
-                  </>
-                ) : (
-                  <div className="text-center py-12">
-                    <p className="text-foreground/40 font-light">
-                      Start the conversation
-                    </p>
-                  </div>
-                )}
-              </div>
-              
-              {/* Reply preview */}
-              {replyTo && (
-                <div className="px-4 py-2 border-t border-border/20 flex items-center gap-3 bg-accent/10">
-                  <div className="flex-1 min-w-0">
-                    <p className="text-xs text-foreground/60">Replying to {replyTo.senderName}</p>
-                    <p className="text-sm text-foreground/80 truncate">{replyTo.content}</p>
-                  </div>
-                  <button onClick={() => setReplyTo(null)} className="text-foreground/40 hover:text-foreground">
-                    <X className="w-4 h-4" />
-                  </button>
+                    );
+                  })}
                 </div>
               )}
-              
-              <div className="p-4 border-t border-border/20">
-                {/* Disappearing message controls */}
-                <div className="flex items-center gap-2 mb-2">
-                  <Popover>
-                    <PopoverTrigger asChild>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className={`h-7 rounded-full text-xs font-light ${messageTTL ? 'text-foreground bg-accent/20' : 'text-foreground/40'}`}
-                      >
-                        <Timer className="w-3.5 h-3.5 mr-1" />
-                        {messageTTL === '1h' ? '1 hour' : messageTTL === '24h' ? '24 hours' : messageTTL === '7d' ? '7 days' : 'Auto-delete'}
-                      </Button>
-                    </PopoverTrigger>
-                    <PopoverContent className="glass-panel border w-40 p-1" side="top">
-                      <div className="space-y-0.5">
-                        {[
-                          { value: null, label: 'Off' },
-                          { value: '1h', label: '1 hour' },
-                          { value: '24h', label: '24 hours' },
-                          { value: '7d', label: '7 days' },
-                        ].map((opt) => (
-                          <button
-                            key={opt.label}
-                            onClick={() => setMessageTTL(opt.value)}
-                            className={`w-full text-left text-sm font-light px-3 py-1.5 rounded hover:bg-accent/20 ${messageTTL === opt.value ? 'text-foreground bg-accent/10' : 'text-foreground/60'}`}
-                          >
-                            {opt.label}
-                          </button>
-                        ))}
-                      </div>
-                    </PopoverContent>
-                  </Popover>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => setViewOnce(!viewOnce)}
-                    className={`h-7 rounded-full text-xs font-light ${viewOnce ? 'text-foreground bg-accent/20' : 'text-foreground/40'}`}
-                  >
-                    <Eye className="w-3.5 h-3.5 mr-1" />
-                    View once {viewOnce ? '✓' : ''}
-                  </Button>
-                </div>
-                <form onSubmit={handleSend} className="flex items-center gap-3">
-                  <Textarea
-                    value={newMessage}
-                    onChange={(e) => setNewMessage(e.target.value)}
-                    placeholder="Type a message..."
-                    className="flex-1 bg-background/50 border-border/50 rounded-lg font-light resize-none min-h-[44px] max-h-32"
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter' && !e.shiftKey) {
-                        e.preventDefault();
-                        handleSend(e);
-                      }
-                    }}
-                  />
-                  <Button
-                    type="submit"
-                    disabled={!newMessage.trim() || sendMessage.isPending}
-                    className="rounded-lg bg-foreground text-background hover:bg-foreground/90 h-11 w-11 p-0"
-                  >
-                    {sendMessage.isPending ? (
-                      <Loader2 className="w-5 h-5 animate-spin" />
-                    ) : (
-                      <Send className="w-5 h-5" />
-                    )}
-                  </Button>
-                </form>
-              </div>
-            </>
-          ) : selectedGroup ? (
-            <>
-              <div className="p-4 border-b border-border/20 flex items-center gap-3">
-                <button 
-                  onClick={() => setSelectedGroup(null)}
-                  className="lg:hidden text-foreground/60 hover:text-foreground"
-                >
-                  <ArrowLeft className="w-5 h-5" />
-                </button>
-                <div className="w-10 h-10 rounded-lg bg-accent flex items-center justify-center">
-                  <Users className="w-5 h-5 text-foreground/60" />
-                </div>
-                <div>
-                  <p className="text-foreground font-normal">
-                    {selectedGroup.name}
-                  </p>
-                  <p className="text-foreground/40 text-sm font-light">
-                    {selectedGroup.member_count} members
-                  </p>
-                </div>
-              </div>
-              
-              <div 
-                className="flex-1 overflow-y-auto p-4 space-y-3 message-container message-protected"
-                style={wallpaperStyle}
+              {selectedMembers.length > 0 && (
+                <p className="mt-2 text-[12px] font-light text-foreground/45 tabular-nums">
+                  {selectedMembers.length} {selectedMembers.length === 1 ? "person" : "people"}
+                </p>
+              )}
+            </div>
+            <Button
+              onClick={() => createGroupChat.mutate()}
+              disabled={!newGroupName.trim() || selectedMembers.length === 0 || createGroupChat.isPending}
+              variant="signal"
+              size="sm"
+              className="shadow-none"
+            >
+              {createGroupChat.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : "create group"}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={newConversationOpen} onOpenChange={setNewConversationOpen}>
+        <DialogTrigger asChild>
+          <button aria-label="new message" title="new message" className="quiet p-2 -mr-2 rounded-md">
+            <Plus className="w-4 h-4" />
+          </button>
+        </DialogTrigger>
+        <DialogContent className="glass-panel border rounded-md sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-[20px] font-extralight lowercase tracking-[-0.02em]">new message</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-5 mt-1">
+            <input
+              value={newMessageRecipient}
+              onChange={(e) => setNewMessageRecipient(e.target.value)}
+              placeholder="@username"
+              aria-label="to"
+              autoComplete="off"
+              className="field w-full h-10 text-[15px] font-light text-foreground placeholder:text-foreground/35"
+            />
+            <textarea
+              value={newConversationMessage}
+              onChange={(e) => setNewConversationMessage(e.target.value)}
+              placeholder="write something."
+              aria-label="message"
+              rows={3}
+              className="field w-full resize-none text-[15px] font-light leading-relaxed text-foreground placeholder:text-foreground/35"
+            />
+            <Button
+              onClick={() => startNewConversation.mutate()}
+              disabled={!newMessageRecipient.trim() || !newConversationMessage.trim() || startNewConversation.isPending}
+              variant="signal"
+              size="sm"
+              className="shadow-none"
+            >
+              {startNewConversation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : "send"}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+    </>
+  );
+
+  const listControls = (
+    <div>
+      <div role="tablist" aria-label="conversations" className="flex items-center gap-6 border-b border-foreground/10">
+        {tabs.map((t) => (
+          <button
+            key={t.id}
+            role="tab"
+            aria-selected={activeTab === t.id}
+            onClick={() => setActiveTab(t.id)}
+            className="text-tab text-[14px] whitespace-nowrap"
+          >
+            {t.label}
+            {t.id === "requests" && requestCount > 0 && (
+              <span className="ml-1.5 text-[11px] tabular-nums text-signal">{requestCount}</span>
+            )}
+          </button>
+        ))}
+      </div>
+      {activeTab !== "requests" && (
+        <input
+          type="search"
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          placeholder="search people."
+          aria-label="search people"
+          autoComplete="off"
+          className="field w-full h-10 mt-3 text-[14px] font-light text-foreground placeholder:text-foreground/35 [&::-webkit-search-cancel-button]:appearance-none"
+        />
+      )}
+    </div>
+  );
+
+  const conversationList = (
+    <>
+      {loadingList ? (
+        <ListSkeleton />
+      ) : visibleItems.length > 0 ? (
+        <div className="stagger">
+          {visibleItems.map((item, idx) => {
+            const isDm = item.kind === "dm";
+            const selected = isDm ? selectedUser?.id === item.conv.id : selectedGroup?.id === item.group.id;
+            const unread = isDm && item.conv.unread;
+            const name = isDm ? item.conv.display_name || item.conv.username : item.group.name;
+            const last = isDm
+              ? item.conv.last_message
+              : item.group.last_message || `${item.group.member_count} ${item.group.member_count === 1 ? "member" : "members"}`;
+            const time = shortTime(isDm ? item.conv.last_message_time : item.group.last_message_time);
+            return (
+              <button
+                key={isDm ? `dm-${item.conv.id}` : `g-${item.group.id}`}
+                onClick={() => openItem(item)}
+                aria-current={selected ? "true" : undefined}
+                style={{ "--i": Math.min(idx, 8) } as React.CSSProperties}
+                className={`row w-full flex items-center gap-3 px-5 sm:px-8 py-3.5 text-left ${selected ? "bg-foreground/[0.04]" : ""}`}
               >
-                {loadingGroupMessages ? (
-                  <div className="flex items-center justify-center py-12">
-                    <Loader2 className="w-6 h-6 animate-spin text-foreground/60" />
-                  </div>
-                ) : groupMessages && groupMessages.length > 0 ? (
-                  <>
-                    {groupMessages.map((msg: any) => (
-                      <div
-                        key={msg.id}
-                        className={`flex ${msg.sender_id === user?.id ? 'justify-end' : 'justify-start'}`}
-                      >
-                        <div className={`max-w-[70%] ${msg.sender_id === user?.id ? '' : 'flex gap-2'}`}>
-                          {msg.sender_id !== user?.id && (
-                            <UserAvatar avatarUrl={msg.sender?.avatar_url} size="sm" />
-                          )}
-                          <div className={`rounded-lg px-4 py-2 ${
-                            msg.sender_id === user?.id 
-                              ? 'bg-foreground text-background' 
-                              : 'glass-card'
-                          }`}>
-                            {msg.sender_id !== user?.id && (
-                              <p className="text-xs text-foreground/60 font-light mb-1 select-none">
-                                {msg.sender?.display_name || msg.sender?.username}
-                              </p>
-                            )}
-                            <p className="font-light select-none">{msg.content}</p>
-                            <p className={`text-xs mt-1 ${
-                              msg.sender_id === user?.id ? 'text-background/60' : 'text-foreground/40'
-                            }`}>
-                              {formatTime(msg.created_at)}
-                            </p>
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                    <div ref={messagesEndRef} />
-                  </>
+                {isDm ? (
+                  <UserAvatar avatarUrl={item.conv.avatar_url} username={item.conv.username} size="sm" className="shrink-0" />
                 ) : (
-                  <div className="text-center py-12">
-                    <p className="text-foreground/40 font-light">
-                      Start the conversation
-                    </p>
-                  </div>
+                  <GroupMark />
                 )}
-              </div>
-              
-              <div className="p-4 border-t border-border/20">
-                <form onSubmit={handleSend} className="flex items-center gap-3">
-                  <Textarea
-                    value={newMessage}
-                    onChange={(e) => setNewMessage(e.target.value)}
-                    placeholder="Type a message..."
-                    className="flex-1 bg-background/50 border-border/50 rounded-lg font-light resize-none min-h-[44px] max-h-32"
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter' && !e.shiftKey) {
-                        e.preventDefault();
-                        handleSend(e);
-                      }
-                    }}
-                  />
-                  <Button
-                    type="submit"
-                    disabled={!newMessage.trim() || sendGroupMessage.isPending}
-                    className="rounded-lg bg-foreground text-background hover:bg-foreground/90 h-11 w-11 p-0"
-                  >
-                    {sendGroupMessage.isPending ? (
-                      <Loader2 className="w-5 h-5 animate-spin" />
-                    ) : (
-                      <Send className="w-5 h-5" />
-                    )}
-                  </Button>
-                </form>
-              </div>
-            </>
-          ) : (
-            <div className="flex-1 flex items-center justify-center">
-              {/* Scrim card: the empty state used to sit directly on the
-                  wallpaper, where the copy was effectively unreadable. */}
-              <div className="glass-card rounded-2xl px-10 py-8 text-center max-w-sm mx-4">
-                <MessageSquare className="w-10 h-10 mx-auto text-foreground/35 mb-3" />
-                <p className="text-foreground/80 font-medium">
-                  Select a conversation
-                </p>
-                <p className="text-foreground/55 text-sm mt-1">
-                  Or start a new one — messages stay between you and them.
-                </p>
+                <span className="flex-1 min-w-0">
+                  <span className="flex items-baseline gap-2">
+                    <span className={`truncate text-[14px] font-light ${unread ? "text-foreground" : "text-foreground/70"}`}>{name}</span>
+                    <span className="ml-auto shrink-0 flex items-center gap-1.5 text-[11px] font-light text-foreground/35 tabular-nums">
+                      {time}
+                      {unread && (
+                        <>
+                          <span aria-hidden className="w-[5px] h-[5px] rounded-full bg-signal" />
+                          <span className="sr-only">unread</span>
+                        </>
+                      )}
+                    </span>
+                  </span>
+                  <span className={`block truncate text-[13px] font-light mt-0.5 ${unread ? "text-foreground/70" : "text-foreground/40"}`}>
+                    {last || <span className="text-foreground/30">no messages yet</span>}
+                  </span>
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      ) : q ? (
+        people.length === 0 && (
+          <p className="px-5 sm:px-8 py-10 text-[14px] font-light text-foreground/45">
+            {q.length > 2 ? `nobody matches "${searchQuery.trim()}".` : "keep typing to search people."}
+          </p>
+        )
+      ) : activeTab === "groups" ? (
+        <EmptyState
+          title="no groups yet."
+          description="a group is a room with a few people in it."
+          actionLabel="new group"
+          onAction={() => setNewGroupOpen(true)}
+        />
+      ) : (
+        <EmptyState
+          title="nothing here yet."
+          description="write to someone and it starts here."
+          actionLabel="new message"
+          onAction={() => setNewConversationOpen(true)}
+        />
+      )}
+
+      {people.length > 0 && (
+        <div>
+          <p className="px-5 sm:px-8 pt-5 pb-1.5 text-[10px] font-light uppercase tracking-[0.24em] text-foreground/35">people</p>
+          {people.map((profile) => (
+            <button
+              key={profile.user_id}
+              onClick={() => startConversation(profile)}
+              className="row w-full flex items-center gap-3 px-5 sm:px-8 py-3 text-left"
+            >
+              <UserAvatar avatarUrl={profile.avatar_url} username={profile.username} size="sm" className="shrink-0" />
+              <span className="flex-1 min-w-0 truncate text-[14px] font-light text-foreground/70">
+                {profile.display_name || profile.username}
+                <span className="text-foreground/40 ml-2">@{profile.username}</span>
+              </span>
+            </button>
+          ))}
+        </div>
+      )}
+    </>
+  );
+
+  const requestList = loadingRequests ? (
+    <ListSkeleton count={2} />
+  ) : requestCount > 0 ? (
+    <div className="stagger">
+      {messageRequests!.map((request, idx) => (
+        <div key={request.id} className="row px-5 sm:px-8 py-4" style={{ "--i": idx } as React.CSSProperties}>
+          <div className="flex items-start gap-3">
+            <UserAvatar avatarUrl={request.sender_avatar_url} username={request.sender_username} size="sm" className="shrink-0 mt-0.5" />
+            <div className="flex-1 min-w-0">
+              <p className="flex items-baseline gap-2 text-[14px] font-light">
+                <span className="text-foreground truncate">{request.sender_display_name || request.sender_username}</span>
+                <span className="text-foreground/40 truncate">@{request.sender_username}</span>
+                <span className="ml-auto shrink-0 text-[11px] text-foreground/35 tabular-nums">{shortTime(request.created_at)}</span>
+              </p>
+              <p className="mt-1 text-[13px] font-light text-foreground/60 line-clamp-2">{request.message}</p>
+              <div className="mt-1.5 -ml-1 flex items-center gap-3 text-[13px] font-light">
+                <button onClick={() => acceptRequest(request)} className="h-10 px-1 text-foreground hover:text-signal transition-colors">
+                  accept
+                </button>
+                <button onClick={() => declineRequest(request)} className="quiet h-10 px-1">
+                  decline
+                </button>
               </div>
             </div>
-          )}
+          </div>
         </div>
+      ))}
+    </div>
+  ) : (
+    <EmptyState title="no requests." description="people you have not written to yet land here first." />
+  );
+
+  const composer = (
+    <div className="shrink-0 border-t border-foreground/10 px-5 sm:px-8 pt-2 pb-3">
+      {replyTo && !selectedGroup && (
+        <div className="mb-2 pl-3 border-l border-foreground/25 flex items-start gap-3">
+          <div className="flex-1 min-w-0 text-[12px] font-light">
+            <p className="text-foreground/45">replying to {replyTo.senderName}</p>
+            <p className="truncate text-foreground/70">{replyTo.content}</p>
+          </div>
+          <button type="button" onClick={() => setReplyTo(null)} aria-label="cancel reply" className="quiet p-1.5 -mr-1.5 rounded-md">
+            <X className="w-[15px] h-[15px]" />
+          </button>
+        </div>
+      )}
+      <form onSubmit={handleSend} className="flex items-center gap-0.5">
+        <input
+          value={newMessage}
+          onChange={(e) => setNewMessage(e.target.value)}
+          placeholder={`write to ${threadName}.`}
+          aria-label={`write to ${threadName}`}
+          autoComplete="off"
+          className="field flex-1 min-w-0 h-10 mr-2 text-[15px] font-light text-foreground placeholder:text-foreground/35"
+        />
+        {!selectedGroup && (
+          <>
+            <Popover>
+              <PopoverTrigger asChild>
+                <button
+                  type="button"
+                  aria-label={messageTTL ? `auto-delete after ${messageTTL}` : "auto-delete"}
+                  aria-pressed={!!messageTTL}
+                  title="auto-delete"
+                  className="quiet inline-flex items-center justify-center gap-1 h-10 min-w-10 px-2 rounded-md text-[11px] tabular-nums"
+                >
+                  <Timer className="w-4 h-4" />
+                  {messageTTL && <span>{messageTTL}</span>}
+                </button>
+              </PopoverTrigger>
+              <PopoverContent side="top" align="end" className="glass-panel border rounded-md w-40 p-1.5">
+                <p className="px-2 pt-1 pb-1.5 text-[11px] font-light text-foreground/40">auto-delete after</p>
+                {[
+                  { value: null, label: "never" },
+                  { value: "1h", label: "1 hour" },
+                  { value: "24h", label: "24 hours" },
+                  { value: "7d", label: "7 days" },
+                ].map((opt) => (
+                  <button
+                    type="button"
+                    key={opt.label}
+                    onClick={() => setMessageTTL(opt.value)}
+                    aria-pressed={messageTTL === opt.value}
+                    className="quiet w-full text-left text-[13px] font-light px-2 py-1.5 rounded-md"
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+              </PopoverContent>
+            </Popover>
+            <button
+              type="button"
+              onClick={() => setViewOnce(!viewOnce)}
+              aria-pressed={viewOnce}
+              aria-label="view once"
+              title="view once"
+              className="quiet inline-flex items-center justify-center h-10 w-10 rounded-md"
+            >
+              <Eye className="w-4 h-4" />
+            </button>
+            {replyTo && (
+              <button
+                type="button"
+                onClick={() => setReplyTo(null)}
+                aria-pressed
+                aria-label="replying. press to cancel"
+                title="replying"
+                className="quiet inline-flex items-center justify-center h-10 w-10 rounded-md"
+              >
+                <Reply className="w-4 h-4" />
+              </button>
+            )}
+          </>
+        )}
+        <Button type="submit" variant="signal" size="sm" disabled={!newMessage.trim() || sending} className="shadow-none h-9 px-3.5 ml-1.5">
+          {sending ? <Loader2 className="w-4 h-4 animate-spin" /> : "send"}
+        </Button>
+      </form>
+    </div>
+  );
+
+  return (
+    <DashboardLayout wide>
+      <div className="flex h-[calc(100dvh-5.5rem-env(safe-area-inset-bottom))] lg:h-[100dvh]">
+        {/* Conversations */}
+        <section
+          aria-label="conversations"
+          className={`w-full lg:w-[320px] lg:shrink-0 flex-col min-h-0 lg:border-r lg:border-foreground/10 ${threadOpen ? "hidden lg:flex" : "flex"}`}
+        >
+          <PageHeader title="messages" subtitle="between you and them." actions={headerActions} belowRow={listControls} />
+          <div className="flex-1 min-h-0 overflow-y-auto">{activeTab === "requests" ? requestList : conversationList}</div>
+        </section>
+
+        {/* Thread */}
+        <section aria-label="thread" className={`flex-1 min-w-0 flex-col min-h-0 pt-12 lg:pt-0 ${threadOpen ? "flex" : "hidden lg:flex"}`}>
+          {threadOpen ? (
+            <>
+              <div className="shrink-0 flex items-center gap-3 px-4 sm:px-6 h-14 border-b border-foreground/10">
+                <button onClick={closeThread} aria-label="back to conversations" className="quiet lg:hidden p-2 -ml-2 rounded-md">
+                  <ArrowLeft className="w-[17px] h-[17px]" />
+                </button>
+                {selectedUser ? (
+                  <UserAvatar avatarUrl={selectedUser.avatar_url} username={selectedUser.username} size="sm" className="shrink-0" />
+                ) : (
+                  <GroupMark />
+                )}
+                <div className="min-w-0 flex-1 flex items-baseline gap-2 text-[14px] font-light">
+                  <span className="text-foreground truncate">{threadName}</span>
+                  <span className="text-foreground/40 truncate">
+                    {selectedUser
+                      ? `@${selectedUser.username}`
+                      : `${selectedGroup?.member_count ?? 0} ${selectedGroup?.member_count === 1 ? "member" : "members"}`}
+                  </span>
+                </div>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <button aria-label="more" className="quiet p-2 -mr-2 rounded-md">
+                      <MoreHorizontal className="w-4 h-4" />
+                    </button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="glass-panel border rounded-md min-w-[160px]">
+                    {selectedUser && (
+                      <DropdownMenuItem onClick={() => navigate(`/user/${selectedUser.username}`)} className="text-[13px] font-light">
+                        view profile
+                      </DropdownMenuItem>
+                    )}
+                    {selectedGroup?.description && (
+                      <DropdownMenuItem disabled className="text-[13px] font-light text-foreground/60">
+                        {selectedGroup.description}
+                      </DropdownMenuItem>
+                    )}
+                    <DropdownMenuItem onClick={closeThread} className="text-[13px] font-light">
+                      close
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </div>
+
+              {selectedUser ? (
+                <div className="flex-1 min-h-0 overflow-y-auto message-container message-protected message-watermark" style={wallpaperStyle}>
+                  {loadingMessages ? (
+                    <ThreadSkeleton />
+                  ) : messages && messages.length > 0 ? (
+                    <div className="flex flex-col gap-5 px-5 sm:px-8 py-6">
+                      {renderRuns(messages, (msg, _first, last) => (
+                        <MessageBubble
+                          key={msg.id}
+                          id={msg.id}
+                          content={msg.content}
+                          senderId={msg.sender_id}
+                          currentUserId={user?.id || ""}
+                          createdAt={msg.created_at}
+                          readAt={msg.read_at}
+                          showTime={last}
+                          replyTo={
+                            msg.reply_to
+                              ? {
+                                  id: msg.reply_to.id,
+                                  content: msg.reply_to.content,
+                                  senderName: msg.reply_to.sender_id === user?.id ? "you" : selectedUser.display_name || selectedUser.username,
+                                }
+                              : null
+                          }
+                          onDelete={handleDeleteMessage}
+                          onReply={handleReply}
+                          onReact={handleReact}
+                          reactions={reactions?.get(msg.id) || []}
+                        />
+                      ))}
+                      <div ref={messagesEndRef} />
+                    </div>
+                  ) : (
+                    <p className="px-5 sm:px-8 py-14 text-[14px] font-light text-foreground/45">nothing yet. say hello.</p>
+                  )}
+                </div>
+              ) : (
+                <div className="flex-1 min-h-0 overflow-y-auto message-container message-protected" style={wallpaperStyle}>
+                  {loadingGroupMessages ? (
+                    <ThreadSkeleton />
+                  ) : groupMessages && groupMessages.length > 0 ? (
+                    <div className="flex flex-col gap-5 px-5 sm:px-8 py-6">
+                      {renderRuns(groupMessages, (msg, first, last) => (
+                        <MessageBubble
+                          key={msg.id}
+                          id={msg.id}
+                          content={msg.content}
+                          senderId={msg.sender_id}
+                          currentUserId={user?.id || ""}
+                          createdAt={msg.created_at}
+                          sender={msg.sender}
+                          showSenderInfo={first}
+                          showTime={last}
+                        />
+                      ))}
+                      <div ref={messagesEndRef} />
+                    </div>
+                  ) : (
+                    <p className="px-5 sm:px-8 py-14 text-[14px] font-light text-foreground/45">nothing yet. say hello.</p>
+                  )}
+                </div>
+              )}
+
+              {composer}
+            </>
+          ) : (
+            <div className="flex-1 flex flex-col items-center justify-center px-8 text-center">
+              <p className="text-[15px] font-light text-foreground/50">pick a conversation, or start one.</p>
+              <button
+                onClick={() => setNewConversationOpen(true)}
+                className="mt-3 text-[14px] font-light text-foreground hover:text-signal transition-colors"
+              >
+                new message
+              </button>
+            </div>
+          )}
+        </section>
       </div>
     </DashboardLayout>
   );

@@ -1,11 +1,10 @@
 import { useState, useEffect, useRef } from "react";
-import { Dialog, DialogContent } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { supabase } from "@/integrations/supabase/client";
-import { Loader2, Smartphone, Key, Copy, Check } from "lucide-react";
-import Brandmark from "@/components/Brandmark";
+import { Loader2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
 interface MFAEnrollModalProps {
@@ -13,6 +12,8 @@ interface MFAEnrollModalProps {
   onOpenChange: (open: boolean) => void;
   onEnrolled: () => void;
 }
+
+const codeFieldClass = "h-12 font-mono text-center text-[24px] tracking-[0.4em] placeholder:tracking-[0.4em]";
 
 export const MFAEnrollModal = ({ open, onOpenChange, onEnrolled }: MFAEnrollModalProps) => {
   const [step, setStep] = useState<'qr' | 'verify' | 'backup'>('qr');
@@ -78,8 +79,8 @@ export const MFAEnrollModal = ({ open, onOpenChange, onEnrolled }: MFAEnrollModa
     } catch (error: any) {
       // Generic message — never surface raw provider errors to the UI
       toast({
-        title: "Could not start MFA setup",
-        description: "Please try again in a moment.",
+        title: "could not start two-factor setup",
+        description: "try again in a moment.",
         variant: "destructive",
       });
       if (import.meta.env.DEV) console.warn("MFA enroll failed");
@@ -90,13 +91,13 @@ export const MFAEnrollModal = ({ open, onOpenChange, onEnrolled }: MFAEnrollModa
 
   const verifyMFA = async () => {
     if (verifyCode.length !== 6) return;
-    
+
     setLoading(true);
     try {
       const { data: challengeData, error: challengeError } = await supabase.auth.mfa.challenge({
         factorId
       });
-      
+
       if (challengeError) throw challengeError;
 
       const { error: verifyError } = await supabase.auth.mfa.verify({
@@ -111,14 +112,14 @@ export const MFAEnrollModal = ({ open, onOpenChange, onEnrolled }: MFAEnrollModa
       completedRef.current = true;
       factorIdRef.current = '';
 
-      toast({ title: "MFA Enabled", description: "Two-factor authentication is now active." });
+      toast({ title: "two-factor is on" });
       onEnrolled();
       onOpenChange(false);
     } catch (error: any) {
       // Avoid leaking factor IDs / challenge IDs / Supabase internals
       toast({
-        title: "Verification failed",
-        description: "That code didn't match. Try a fresh code from your app.",
+        title: "that code did not match",
+        description: "try a fresh code from your app.",
         variant: "destructive",
       });
       if (import.meta.env.DEV) console.warn("MFA verify failed");
@@ -135,87 +136,86 @@ export const MFAEnrollModal = ({ open, onOpenChange, onEnrolled }: MFAEnrollModa
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md p-0 bg-transparent border-none shadow-none">
-        <div className="glass-card rounded-3xl p-6 sm:p-8">
-          <div className="flex items-center gap-2 mb-6">
-            <Brandmark className="w-6 h-6 opacity-80" />
-            <span className="text-foreground font-light text-xl">Setup MFA</span>
-          </div>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>two-factor</DialogTitle>
+          <DialogDescription>
+            {step === 'qr'
+              ? "scan this with an authenticator app such as google authenticator, authy or 1password."
+              : "enter the six-digit code your app shows now."}
+          </DialogDescription>
+        </DialogHeader>
 
-          {step === 'qr' && (
-            <div className="space-y-4">
-              <p className="text-foreground/70 font-light text-sm">
-                Scan this QR code with your authenticator app (Google Authenticator, Authy, etc.)
-              </p>
-              
-              {qrCode && (
-                <div className="flex justify-center p-4 bg-white rounded-xl">
-                  <img src={qrCode} alt="MFA QR Code" className="w-48 h-48" />
+        {step === 'qr' && (
+          <div className="space-y-5">
+            <div className="flex justify-center">
+              {qrCode ? (
+                <div className="p-3 bg-white rounded-md">
+                  <img src={qrCode} alt="two-factor qr code" className="w-44 h-44" />
                 </div>
+              ) : (
+                <div className="w-[200px] h-[200px] rounded-md bg-foreground/[0.06] animate-pulse" aria-hidden />
               )}
+            </div>
 
-              <div className="space-y-2">
-                <Label className="text-foreground/60 font-light text-xs">
-                  Can't scan? Enter this code manually:
-                </Label>
-                <div className="flex items-center gap-2">
-                  <code className="flex-1 bg-background/50 border border-border/50 rounded-lg p-2 text-xs font-mono text-foreground/80 break-all">
-                    {secret}
-                  </code>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={copySecret}
-                    className="shrink-0"
-                  >
-                    {copied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
-                  </Button>
-                </div>
+            <div>
+              <p className="text-[12px] font-light text-foreground/50">cannot scan? type this into the app instead.</p>
+              <div className="mt-1.5 flex items-center gap-3">
+                <code className="flex-1 min-w-0 text-[12px] font-mono text-foreground/80 break-all leading-relaxed">
+                  {secret || "…"}
+                </code>
+                <button
+                  type="button"
+                  onClick={copySecret}
+                  disabled={!secret}
+                  className="quiet text-[13px] h-9 px-2 -mr-2 rounded-md shrink-0"
+                >
+                  {copied ? "copied" : "copy"}
+                </button>
               </div>
+            </div>
 
-              <Button
-                onClick={() => setStep('verify')}
-                className="w-full h-12 rounded-xl font-light bg-foreground text-background hover:bg-foreground/90"
+            <Button variant="signal" onClick={() => setStep('verify')} disabled={!qrCode} className="w-full">
+              next
+            </Button>
+          </div>
+        )}
+
+        {step === 'verify' && (
+          <form
+            className="space-y-5"
+            onSubmit={(e) => { e.preventDefault(); verifyMFA(); }}
+          >
+            <div>
+              <Label htmlFor="mfa-code">code</Label>
+              <Input
+                id="mfa-code"
+                type="text"
+                inputMode="numeric"
+                maxLength={6}
+                value={verifyCode}
+                onChange={(e) => setVerifyCode(e.target.value.replace(/\D/g, ''))}
+                placeholder="000000"
+                className={`mt-1 ${codeFieldClass}`}
+                autoComplete="one-time-code"
+                autoFocus
+              />
+            </div>
+
+            <div className="flex items-center justify-between gap-4">
+              <button
+                type="button"
+                onClick={() => setStep('qr')}
+                className="quiet text-[13px] h-9 px-2 -ml-2 rounded-md"
               >
-                <Smartphone className="w-4 h-4 mr-2" />
-                I've scanned the code
+                back
+              </button>
+              <Button type="submit" variant="signal" disabled={loading || verifyCode.length !== 6} className="min-w-[120px]">
+                {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : "turn on"}
               </Button>
             </div>
-          )}
-
-          {step === 'verify' && (
-            <div className="space-y-4">
-              <p className="text-foreground/70 font-light text-sm">
-                Enter the 6-digit code from your authenticator app to verify setup.
-              </p>
-
-              <div className="space-y-2">
-                <Label htmlFor="mfa-code" className="text-foreground/80 font-light">Verification Code</Label>
-                <Input
-                  id="mfa-code"
-                  type="text"
-                  inputMode="numeric"
-                  maxLength={6}
-                  value={verifyCode}
-                  onChange={(e) => setVerifyCode(e.target.value.replace(/\D/g, ''))}
-                  placeholder="000000"
-                  className="bg-background/50 border-border/50 rounded-xl h-12 font-mono text-center text-2xl tracking-widest"
-                  autoComplete="one-time-code"
-                />
-              </div>
-
-              <Button
-                onClick={verifyMFA}
-                disabled={loading || verifyCode.length !== 6}
-                className="w-full h-12 rounded-xl font-light bg-foreground text-background hover:bg-foreground/90"
-              >
-                {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : (
-                  <><Key className="w-4 h-4 mr-2" /> Verify & Enable MFA</>
-                )}
-              </Button>
-            </div>
-          )}
-        </div>
+          </form>
+        )}
       </DialogContent>
     </Dialog>
   );
@@ -245,14 +245,14 @@ export const MFAVerifyModal = ({ open, onOpenChange, onVerified, onSignOut }: MF
       const totpFactor = factors?.totp?.find(f => f.status === 'verified');
 
       if (!totpFactor) {
-        toast({ title: "Error", description: "No MFA factor found", variant: "destructive" });
+        toast({ title: "no two-factor method on this account", variant: "destructive" });
         return;
       }
 
       const { data: challengeData, error: challengeError } = await supabase.auth.mfa.challenge({
         factorId: totpFactor.id
       });
-      
+
       if (challengeError) throw challengeError;
 
       const { error: verifyError } = await supabase.auth.mfa.verify({
@@ -266,7 +266,7 @@ export const MFAVerifyModal = ({ open, onOpenChange, onVerified, onSignOut }: MF
       onVerified();
       onOpenChange(false);
     } catch (error: any) {
-      toast({ title: "Invalid Code", description: "Please check your authenticator app and try again.", variant: "destructive" });
+      toast({ title: "that code did not match", description: "check your authenticator app and try again.", variant: "destructive" });
       setCode('');
     } finally {
       setLoading(false);
@@ -275,54 +275,47 @@ export const MFAVerifyModal = ({ open, onOpenChange, onVerified, onSignOut }: MF
 
   return (
     <Dialog open={open} onOpenChange={() => {}}>
-      <DialogContent className="sm:max-w-md p-0 bg-transparent border-none shadow-none" onInteractOutside={(e) => e.preventDefault()}>
-        <div className="glass-card rounded-3xl p-6 sm:p-8">
-          <div className="flex items-center gap-2 mb-6">
-            <Brandmark className="w-6 h-6 opacity-80" />
-            <span className="text-foreground font-light text-xl">Two-Factor Auth</span>
-          </div>
+      <DialogContent
+        className="sm:max-w-sm [&>button:last-child]:hidden"
+        onInteractOutside={(e) => e.preventDefault()}
+        onEscapeKeyDown={(e) => e.preventDefault()}
+      >
+        <DialogHeader>
+          <DialogTitle>two-factor</DialogTitle>
+          <DialogDescription>enter the six-digit code from your authenticator app.</DialogDescription>
+        </DialogHeader>
 
-          <p className="text-foreground/70 font-light text-sm mb-4">
-            Enter the 6-digit code from your authenticator app.
-          </p>
+        <form className="space-y-5" onSubmit={(e) => { e.preventDefault(); handleVerify(); }}>
+          <Input
+            type="text"
+            inputMode="numeric"
+            maxLength={6}
+            value={code}
+            onChange={(e) => setCode(e.target.value.replace(/\D/g, ''))}
+            placeholder="000000"
+            aria-label="code"
+            className={codeFieldClass}
+            autoComplete="one-time-code"
+            autoFocus
+          />
 
-          <div className="space-y-4">
-            <Input
-              type="text"
-              inputMode="numeric"
-              maxLength={6}
-              value={code}
-              onChange={(e) => setCode(e.target.value.replace(/\D/g, ''))}
-              placeholder="000000"
-              className="bg-background/50 border-border/50 rounded-xl h-14 font-mono text-center text-3xl tracking-widest"
-              autoComplete="one-time-code"
-              autoFocus
-            />
+          <Button type="submit" variant="signal" disabled={loading || code.length !== 6} className="w-full">
+            {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : "verify"}
+          </Button>
 
-            <Button
-              onClick={handleVerify}
-              disabled={loading || code.length !== 6}
-              className="w-full h-12 rounded-xl font-light bg-foreground text-background hover:bg-foreground/90"
-            >
-              {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : "Verify"}
-            </Button>
-
-            {onSignOut && (
-              <div className="flex justify-center pt-1">
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  onClick={onSignOut}
-                  disabled={loading}
-                  className="font-light text-foreground/60 hover:text-foreground"
-                >
-                  Sign out
-                </Button>
-              </div>
-            )}
-          </div>
-        </div>
+          {onSignOut && (
+            <div className="flex justify-center">
+              <button
+                type="button"
+                onClick={onSignOut}
+                disabled={loading}
+                className="quiet text-[13px] h-9 px-2 rounded-md"
+              >
+                sign out instead
+              </button>
+            </div>
+          )}
+        </form>
       </DialogContent>
     </Dialog>
   );

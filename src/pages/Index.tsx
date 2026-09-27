@@ -1,17 +1,14 @@
 import { Suspense, lazy, useState, useEffect } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { Helmet } from "react-helmet-async";
-import GlassHeader from "@/components/GlassHeader";
 import LandingV2 from "@/components/landing/v2/LandingV2";
 import FAQSection from "@/components/landing/FAQSection";
-import FooterSection from "@/components/landing/FooterSection";
 
 // Sign-in machinery (validation, breach checks, OAuth client) is only needed
 // once someone actually reaches for it — not on first paint.
 const AuthModal = lazy(() => import("@/components/auth/AuthModal"));
 import { useAuth } from "@/hooks/useAuth";
-import backgroundWallpaper from "@/assets/background-wallpaper.webp";
-import SplitShell from "@/components/landing/SplitShell";
+import PublicShell from "@/components/landing/PublicShell";
 
 interface IndexProps {
   openAuth?: "login" | "signup" | null;
@@ -55,7 +52,7 @@ const Index = ({ openAuth }: IndexProps) => {
   }, [stateTab]);
 
   return (
-    <div className="min-h-screen bg-background relative overflow-x-hidden">
+    <PublicShell width="wide" onOpenAuth={handleOpenAuth}>
       <Helmet>
         <title>a quiet room on the internet.</title>
         <meta
@@ -75,37 +72,16 @@ const Index = ({ openAuth }: IndexProps) => {
           name="twitter:description"
           content="bosley is a free social space with a chronological feed, no ads, and no engagement farming. write. talk. leave when you want."
         />
-        <link rel="preload" as="image" href={backgroundWallpaper} fetchPriority="high" />
       </Helmet>
-      {/* An inline style background is only discovered after the page's JS has
-          run, so the largest paint element started downloading last. As a real
-          <img> with high fetch priority the browser's preload scanner starts it
-          immediately. */}
-      <img
-        src={backgroundWallpaper}
-        alt=""
-        aria-hidden="true"
-        fetchPriority="high"
-        decoding="async"
-        className="fixed inset-0 w-full h-full object-cover opacity-90 pointer-events-none select-none"
-      />
-      <div className="fixed inset-0 bg-gradient-to-b from-background/40 via-background/60 to-background/85" />
-
-      <div className="relative z-10">
-        <SplitShell onOpenAuth={handleOpenAuth}>
-          <GlassHeader onOpenAuth={handleOpenAuth} />
-          <LandingV2 onOpenAuth={handleOpenAuth} />
-          <FAQSection />
-          <FooterSection />
-        </SplitShell>
-      </div>
+      <LandingV2 onOpenAuth={handleOpenAuth} />
+      <FAQSection />
 
       {authMounted && (
         <Suspense fallback={null}>
           <AuthModal open={authOpen} onOpenChange={setAuthOpen} defaultTab={authTab} />
         </Suspense>
       )}
-    </div>
+    </PublicShell>
   );
 };
 

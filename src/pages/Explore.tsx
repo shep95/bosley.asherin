@@ -1,18 +1,16 @@
 import { useState } from "react";
 import DashboardLayout from "@/components/layout/DashboardLayout";
 import PostCard from "@/components/feed/PostCard";
+import FeedSkeleton from "@/components/feed/FeedSkeleton";
 import UserAvatar from "@/components/UserAvatar";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
-import { Loader2, TrendingUp, Search, UserPlus, UserMinus } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Search } from "lucide-react";
 import { Link } from "react-router-dom";
 import { useToast } from "@/hooks/use-toast";
 import PageHeader from "@/components/layout/PageHeader";
-import { pillTabsListClass, pillTabsTriggerClass } from "@/components/layout/PillTabs";
+import EmptyState from "@/components/ui/empty-state";
 import { escapeFilterValue } from "@/lib/sanitize";
 
 const Explore = () => {
@@ -56,7 +54,7 @@ const Explore = () => {
         .from('profiles')
         .select('user_id, username, display_name, avatar_url')
         .in('user_id', userIds);
-      
+
       const profilesMap = new Map(profilesData?.map(p => [p.user_id, p]) || []);
 
       // Fetch likes counts
@@ -65,7 +63,7 @@ const Explore = () => {
         .from('post_likes')
         .select('post_id')
         .in('post_id', postIds);
-      
+
       const likesCountMap = new Map<string, number>();
       likesData?.forEach(l => {
         likesCountMap.set(l.post_id, (likesCountMap.get(l.post_id) || 0) + 1);
@@ -77,7 +75,7 @@ const Explore = () => {
         .select('post_id')
         .eq('user_id', user.id)
         .in('post_id', postIds) : { data: [] };
-      
+
       const userLikedSet = new Set(userLikes?.map(l => l.post_id) || []);
 
       const { data: userBookmarks } = user ? await supabase
@@ -85,14 +83,14 @@ const Explore = () => {
         .select('post_id')
         .eq('user_id', user.id)
         .in('post_id', postIds) : { data: [] };
-      
+
       const userBookmarkedSet = new Set(userBookmarks?.map(b => b.post_id) || []);
 
       const { data: commentsData } = await supabase
         .from('comments')
         .select('post_id')
         .in('post_id', postIds);
-      
+
       const commentsCountMap = new Map<string, number>();
       commentsData?.forEach(c => {
         commentsCountMap.set(c.post_id, (commentsCountMap.get(c.post_id) || 0) + 1);
@@ -116,13 +114,13 @@ const Explore = () => {
     queryFn: async () => {
       const term = escapeFilterValue(searchQuery);
       if (!term) return [];
-      
+
       const { data } = await supabase
         .from('profiles')
         .select('user_id, username, display_name, avatar_url, bio')
         .or(`username.ilike.%${term}%,display_name.ilike.%${term}%`)
         .limit(20);
-      
+
       if (!data || !user) return data || [];
 
       // Check which users we're following
@@ -132,9 +130,9 @@ const Explore = () => {
         .select('following_id')
         .eq('follower_id', user.id)
         .in('following_id', userIds);
-      
+
       const followingSet = new Set(followData?.map(f => f.following_id) || []);
-      
+
       return data.map(profile => ({
         ...profile,
         isFollowing: followingSet.has(profile.user_id)
@@ -147,7 +145,7 @@ const Explore = () => {
   const followMutation = useMutation({
     mutationFn: async ({ userId, isFollowing }: { userId: string; isFollowing: boolean }) => {
       if (!user) throw new Error("Not authenticated");
-      
+
       if (isFollowing) {
         await supabase
           .from('follows')
@@ -166,173 +164,151 @@ const Explore = () => {
     }
   });
 
+  type Person = { user_id: string; username: string; display_name: string | null; avatar_url: string | null; bio?: string | null; isFollowing?: boolean };
+
   return (
     <DashboardLayout>
-      <div className="max-w-2xl mx-auto">
-        <PageHeader
-          title="Explore"
-          statusDot="bg-emerald-500"
-          statusLabel="Trending across Bosley"
-          belowRow={
-            <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as "posts" | "users")}>
-              <TabsList className={pillTabsListClass}>
-                <TabsTrigger value="posts" className={pillTabsTriggerClass}>
-                  <TrendingUp className="w-3.5 h-3.5" /> Posts
-                </TabsTrigger>
-                <TabsTrigger value="users" className={pillTabsTriggerClass}>
-                  Find People
-                </TabsTrigger>
-              </TabsList>
-            </Tabs>
-          }
-        />
-
-        <div className="px-4 py-6">
-        <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as "posts" | "users")}>
-
-          <TabsContent value="posts">
-            {/* Topic filters — monochrome pill chips */}
-            <div className="flex flex-wrap gap-1.5 mb-6">
+      <PageHeader
+        title="explore"
+        subtitle="people and posts, newest first."
+        belowRow={
+          <div role="tablist" aria-label="explore" className="flex items-center gap-6 border-b border-foreground/10">
+            {([["posts", "posts"], ["users", "people"]] as const).map(([id, label]) => (
               <button
-                onClick={() => setSelectedTopic(null)}
-                className={`px-3 py-1.5 rounded-md text-xs font-medium transition-all border ${
-                  !selectedTopic
-                    ? 'bg-foreground/10 text-foreground border-foreground/10'
-                    : 'bg-foreground/5 text-foreground/50 border-transparent hover:text-foreground hover:bg-foreground/10'
-                }`}
+                key={id}
+                role="tab"
+                aria-selected={activeTab === id}
+                onClick={() => setActiveTab(id)}
+                className="text-tab text-[14px]"
               >
-                All
+                {label}
               </button>
-              {topics?.map((topic) => (
+            ))}
+          </div>
+        }
+      />
+
+      {activeTab === "posts" && (
+        <>
+          {topics && topics.length > 0 && (
+            <div role="tablist" aria-label="topics" className="row px-5 sm:px-8 flex items-center gap-5 overflow-x-auto text-[13px]">
+              <button role="tab" aria-selected={!selectedTopic} onClick={() => setSelectedTopic(null)} className="text-tab whitespace-nowrap">
+                all
+              </button>
+              {topics.map((topic) => (
                 <button
                   key={topic.id}
+                  role="tab"
+                  aria-selected={selectedTopic === topic.id}
                   onClick={() => setSelectedTopic(topic.id)}
-                  className={`px-3 py-1.5 rounded-md text-xs font-medium transition-all border ${
-                    selectedTopic === topic.id
-                      ? 'bg-foreground/10 text-foreground border-foreground/10'
-                      : 'bg-foreground/5 text-foreground/50 border-transparent hover:text-foreground hover:bg-foreground/10'
-                  }`}
+                  className="text-tab whitespace-nowrap lowercase"
                 >
                   {topic.name}
                 </button>
               ))}
             </div>
+          )}
 
-            {/* Posts */}
-            {isLoading ? (
-              <div className="flex items-center justify-center py-12">
-                <Loader2 className="w-8 h-8 animate-spin text-foreground/60" />
-              </div>
-            ) : posts && posts.length > 0 ? (
-              <div className="space-y-4">
-                {posts.map((post) => (
+          {isLoading ? (
+            <FeedSkeleton count={4} />
+          ) : posts && posts.length > 0 ? (
+            <div className="stagger">
+              {posts.map((post, idx) => (
+                <div key={post.id} style={{ "--i": Math.min(idx, 8) } as React.CSSProperties}>
                   <PostCard
-                    key={post.id}
                     post={post}
                     likesCount={post.likesCount}
                     commentsCount={post.commentsCount}
                     isLiked={post.isLiked}
                     isBookmarked={post.isBookmarked}
                   />
-                ))}
-              </div>
-            ) : (
-              <div className="glass-card rounded-xl p-8 text-center">
-                <p className="text-foreground/60 font-light">
-                  No posts found in this topic yet.
-                </p>
-              </div>
-            )}
-          </TabsContent>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <EmptyState
+              title="nothing here yet."
+              description={selectedTopic ? "no one has written under this topic. try another, or write the first." : "the room is quiet. write the first thing."}
+              actionLabel="write something"
+              actionTo="/dashboard"
+            />
+          )}
+        </>
+      )}
 
-          <TabsContent value="users">
-            {/* Search input */}
-            <div className="relative mb-6">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-foreground/40" />
-              <Input
-                placeholder="Search by username or display name..."
+      {activeTab === "users" && (
+        <>
+          <div className="px-5 sm:px-8 pt-2 pb-4">
+            <label className="field flex items-center gap-3">
+              <Search className="w-4 h-4 text-foreground/40 shrink-0" aria-hidden />
+              <input
+                type="search"
+                placeholder="a name or @handle"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="pl-10 bg-foreground/5 border-foreground/10 rounded-lg font-light h-11 focus-visible:ring-foreground/20"
+                autoFocus
+                aria-label="search people"
+                className="w-full bg-transparent text-[15px] font-light text-foreground placeholder:text-foreground/35 focus:outline-none"
               />
-            </div>
+            </label>
+          </div>
 
-            {/* Search results */}
-            {searchLoading ? (
-              <div className="flex items-center justify-center py-12">
-                <Loader2 className="w-8 h-8 animate-spin text-foreground/60" />
-              </div>
-            ) : searchResults && searchResults.length > 0 ? (
-              <div className="space-y-2">
-                {searchResults.map((profile: any) => (
-                  <div
-                    key={profile.user_id}
-                    className="glass-card rounded-xl p-4 flex items-center justify-between hover:bg-accent/10 transition-colors"
-                  >
-                    <Link 
-                      to={`/user/${profile.username}`}
-                      className="flex items-center gap-3 flex-1"
-                    >
-                      <UserAvatar
-                        avatarUrl={profile.avatar_url}
-                        username={profile.username}
-                        size="md"
-                      />
-                      <div>
-                        <p className="text-foreground font-normal">
-                          {profile.display_name || profile.username}
-                        </p>
-                        <p className="text-foreground/40 font-light text-sm">
-                          @{profile.username}
-                        </p>
-                      </div>
-                    </Link>
-                    
-                    {user?.id !== profile.user_id && (
-                      <Button
-                        variant={profile.isFollowing ? "outline" : "default"}
-                        size="sm"
-                        onClick={() => followMutation.mutate({ 
-                          userId: profile.user_id, 
-                          isFollowing: profile.isFollowing 
-                        })}
-                        disabled={followMutation.isPending}
-                        className="rounded-lg font-light"
-                      >
-                        {profile.isFollowing ? (
-                          <>
-                            <UserMinus className="w-4 h-4 mr-1" />
-                            Unfollow
-                          </>
-                        ) : (
-                          <>
-                            <UserPlus className="w-4 h-4 mr-1" />
-                            Follow
-                          </>
-                        )}
-                      </Button>
-                    )}
+          {searchLoading ? (
+            <div className="stagger" aria-busy="true">
+              {[0, 1, 2].map((i) => (
+                <div key={i} className="row px-5 sm:px-8 py-4 flex items-center gap-4" style={{ "--i": i } as React.CSSProperties}>
+                  <div className="w-10 h-10 rounded-full bg-foreground/[0.07] animate-pulse" />
+                  <div className="flex-1 space-y-2">
+                    <div className="h-3 w-28 rounded bg-foreground/[0.08] animate-pulse" />
+                    <div className="h-3 w-44 rounded bg-foreground/[0.06] animate-pulse" />
                   </div>
-                ))}
-              </div>
-            ) : searchQuery ? (
-              <div className="glass-card rounded-xl p-8 text-center">
-                <p className="text-foreground/60 font-light">
-                  No users found matching "{searchQuery}"
-                </p>
-              </div>
-            ) : (
-              <div className="glass-card rounded-xl p-8 text-center">
-                <Search className="w-12 h-12 text-foreground/20 mx-auto mb-4" />
-                <p className="text-foreground/60 font-light">
-                  Search for users to follow
-                </p>
-              </div>
-            )}
-          </TabsContent>
-        </Tabs>
-        </div>
-      </div>
+                </div>
+              ))}
+            </div>
+          ) : searchResults && searchResults.length > 0 ? (
+            <div className="stagger">
+              {(searchResults as Person[]).map((profile, idx) => (
+                <div
+                  key={profile.user_id}
+                  className="row px-5 sm:px-8 py-4 flex items-center gap-4"
+                  style={{ "--i": Math.min(idx, 8) } as React.CSSProperties}
+                >
+                  <Link to={`/user/${profile.username}`} className="flex items-center gap-4 flex-1 min-w-0">
+                    <UserAvatar avatarUrl={profile.avatar_url} username={profile.username} size="md" className="shrink-0" />
+                    <div className="min-w-0">
+                      <p className="flex items-baseline gap-x-2 text-[14px] font-light leading-none min-w-0">
+                        <span className="text-foreground truncate">{profile.display_name || profile.username}</span>
+                        <span className="text-foreground/40 truncate">@{profile.username}</span>
+                      </p>
+                      {profile.bio && <p className="mt-1.5 text-[13px] font-light text-foreground/50 truncate">{profile.bio}</p>}
+                    </div>
+                  </Link>
+                  {user?.id !== profile.user_id && (
+                    <button
+                      onClick={() => followMutation.mutate({ userId: profile.user_id, isFollowing: !!profile.isFollowing })}
+                      disabled={followMutation.isPending}
+                      aria-pressed={!!profile.isFollowing}
+                      className="quiet text-[13px] h-10 px-2 -mr-2 rounded-md shrink-0 disabled:opacity-50"
+                    >
+                      {profile.isFollowing ? "following" : "follow"}
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
+          ) : searchQuery ? (
+            <EmptyState
+              title="no one by that name."
+              description={`nothing matched "${searchQuery}". try part of a name, or a handle.`}
+            />
+          ) : (
+            <EmptyState
+              title="find someone."
+              description="type a name or a handle. results appear as you type."
+            />
+          )}
+        </>
+      )}
     </DashboardLayout>
   );
 };

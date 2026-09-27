@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
+import UserAvatar from "@/components/UserAvatar";
 import { 
   Send, Image, Loader2, X, Clock, Hash, Video, WifiOff, MessageSquareOff, FileStack, Eye, GripVertical, SlidersHorizontal
 } from "lucide-react";
@@ -66,8 +67,39 @@ const PostComposer = () => {
   // fetching them on mount put two extra round trips in front of the feed's
   // first paint on every dashboard visit. They now warm up on first contact
   // with the composer, long before any dropdown can be opened.
-  const [composerEngaged, setComposerEngaged] = useState(false);
   const { user } = useAuth();
+  const [composerEngaged, setComposerEngaged] = useState(false);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  // "write" from the rail or the phone bar lands the cursor here.
+  useEffect(() => {
+    const focus = () => {
+      setComposerEngaged(true);
+      requestAnimationFrame(() => {
+        textareaRef.current?.focus();
+        textareaRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+      });
+    };
+    window.addEventListener("bosley:compose", focus);
+    const usr = window.history.state?.usr as { compose?: boolean; draft?: { id: string; content: string } } | undefined;
+    if (usr?.draft) {
+      // Arriving from /drafts: pick the draft up where it was left.
+      setContent(usr.draft.content);
+      setDraftId(usr.draft.id);
+    }
+    if (usr?.compose) focus();
+    return () => window.removeEventListener("bosley:compose", focus);
+  }, []);
+
+  const { data: myProfile } = useQuery({
+    queryKey: ["composer-profile", user?.id],
+    queryFn: async () => {
+      if (!user) return null;
+      const { data } = await supabase.from("profiles").select("username, avatar_url").eq("user_id", user.id).maybeSingle();
+      return data;
+    },
+    enabled: !!user,
+  });
   const queryClient = useQueryClient();
   const { toast } = useToast();
 
@@ -393,254 +425,186 @@ const PostComposer = () => {
     createPost.mutate();
   };
 
+  const engaged = composerEngaged || content.length > 0 || mediaFiles.length > 0 || !!pollData;
+
   return (
-    <div className="glass-card rounded-xl p-4 sm:p-5 focus-within:border-foreground/20 focus-within:shadow-lift">
+    <div className="row px-5 sm:px-8 py-4">
       <form onSubmit={handleSubmit}>
-        <Textarea
-          value={content}
-          onChange={(e) => setContent(e.target.value)}
-          onFocus={() => setComposerEngaged(true)}
-          onPaste={handlePaste}
-          placeholder="What's on your mind? Speak freely..."
-          className="bg-transparent border-none resize-none min-h-[88px] text-[0.9375rem] leading-[1.6] text-foreground placeholder:text-foreground/45 focus-visible:ring-0 p-0 mb-4"
-          maxLength={1000}
-        />
-        
-        {/* Media previews */}
-        {mediaPreviews.length > 0 && (
-          <div className={`grid gap-2 mb-4 ${mediaPreviews.length === 1 ? 'grid-cols-1' : 'grid-cols-2'}`}>
-            {mediaPreviews.map((preview, idx) => {
-              const isVideoPreview = preview.type === 'video';
-              return (
-                <div
-                  key={idx}
-                  className={`relative group ${dragIndex === idx ? 'opacity-50' : ''}`}
-                  draggable
-                  onDragStart={() => setDragIndex(idx)}
-                  onDragOver={(e) => e.preventDefault()}
-                  onDrop={(e) => { e.preventDefault(); if (dragIndex !== null) reorderMedia(dragIndex, idx); setDragIndex(null); }}
-                  onDragEnd={() => setDragIndex(null)}
-                >
-                  <div className="absolute top-2 left-2 bg-background/80 rounded-full p-1 opacity-0 group-hover:opacity-100 cursor-move z-10">
-                    <GripVertical className="w-3.5 h-3.5" />
-                  </div>
-                  {isVideoPreview ? (
-                    <video src={preview.url} className="w-full rounded-xl object-cover max-h-48" controls />
-                  ) : (
-                    <img src={preview.url} alt="" className="w-full rounded-xl object-cover max-h-48" />
-                  )}
+        <div className="flex items-start gap-4">
+          <div className="flex-shrink-0 mt-0.5">
+            <UserAvatar avatarUrl={myProfile?.avatar_url} username={myProfile?.username} size="md" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <Textarea
+              ref={textareaRef}
+              value={content}
+              onChange={(e) => setContent(e.target.value)}
+              onFocus={() => setComposerEngaged(true)}
+              onPaste={handlePaste}
+              placeholder="write something."
+              rows={engaged ? 4 : 1}
+              className={`bg-transparent border-none resize-none text-[15.5px] font-light leading-[1.65] text-foreground placeholder:text-foreground/35 focus-visible:ring-0 p-0 shadow-none transition-[min-height] duration-200 ease-soft ${
+                engaged ? "min-h-[104px]" : "min-h-[28px]"
+              }`}
+              maxLength={1000}
+            />
+
+            {mediaPreviews.length > 0 && (
+              <div className={`grid gap-1.5 mt-3 ${mediaPreviews.length === 1 ? "grid-cols-1" : "grid-cols-2"}`}>
+                {mediaPreviews.map((preview, idx) => {
+                  const isVideoPreview = preview.type === "video";
+                  return (
+                    <div
+                      key={idx}
+                      className={`relative group ${dragIndex === idx ? "opacity-50" : ""}`}
+                      draggable
+                      onDragStart={() => setDragIndex(idx)}
+                      onDragOver={(e) => e.preventDefault()}
+                      onDrop={(e) => { e.preventDefault(); if (dragIndex !== null) reorderMedia(dragIndex, idx); setDragIndex(null); }}
+                      onDragEnd={() => setDragIndex(null)}
+                    >
+                      <div className="absolute top-2 left-2 bg-background/80 rounded-md p-1 opacity-0 group-hover:opacity-100 cursor-move z-10">
+                        <GripVertical className="w-3.5 h-3.5" />
+                      </div>
+                      {isVideoPreview ? (
+                        <video src={preview.url} className="w-full rounded-md object-cover max-h-56" controls />
+                      ) : (
+                        <img src={preview.url} alt="" className="w-full rounded-md object-cover max-h-56" />
+                      )}
+                      <button type="button" onClick={() => removeMedia(idx)} aria-label="remove" className="absolute top-2 right-2 bg-background/80 rounded-md p-1 quiet">
+                        <X className="w-4 h-4" />
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+            {engaged && <PollCreator poll={pollData} onPollChange={setPollData} />}
+
+            {engaged && (
+              <div className="flex flex-wrap items-center justify-between gap-3 mt-3 pt-3 border-t border-foreground/10">
+                <div className="flex items-center gap-0.5 -ml-2">
+                  <input ref={imageInputRef} type="file" accept={ALLOWED_IMAGE_TYPES.join(",")} multiple onChange={handleFileSelect} className="hidden" />
+                  <button type="button" onClick={() => imageInputRef.current?.click()} className="quiet p-2 rounded-md" title={`image · up to ${IMAGE_MAX_MB}MB`} aria-label="add image">
+                    <Image className="w-[17px] h-[17px]" />
+                  </button>
+                  <input ref={videoInputRef} type="file" accept={ALLOWED_VIDEO_TYPES.join(",")} onChange={handleFileSelect} className="hidden" />
+                  <button type="button" onClick={() => videoInputRef.current?.click()} className="quiet p-2 rounded-md" title={`video · up to ${VIDEO_MAX_MB}MB`} aria-label="add video">
+                    <Video className="w-[17px] h-[17px]" />
+                  </button>
                   <button
                     type="button"
-                    onClick={() => removeMedia(idx)}
-                    className="absolute top-2 right-2 bg-background/80 rounded-full p-1"
+                    onClick={() => setShowOptions((v) => !v)}
+                    aria-expanded={showOptions}
+                    aria-pressed={showOptions}
+                    className="quiet inline-flex items-center gap-1.5 h-8 px-2 rounded-md text-[13px]"
                   >
-                    <X className="w-4 h-4" />
+                    <SlidersHorizontal className="w-[15px] h-[15px]" />
+                    <span>options</span>
+                    {!showOptions && changedOptionCount > 0 && <span className="text-signal tabular-nums">{changedOptionCount}</span>}
                   </button>
                 </div>
-              );
-            })}
-          </div>
-        )}
-        
-        {/* Poll Creator */}
-        <PollCreator poll={pollData} onPollChange={setPollData} />
-        
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="flex items-center gap-2 flex-wrap">
-            {/* Image upload */}
-            <input
-              ref={imageInputRef}
-              type="file"
-              accept={ALLOWED_IMAGE_TYPES.join(',')}
-              multiple
-              onChange={handleFileSelect}
-              className="hidden"
-            />
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              onClick={() => imageInputRef.current?.click()}
-              className="text-foreground/60 hover:text-foreground"
-              title={`Add image (max ${IMAGE_MAX_MB}MB)`}
-            >
-              <Image className="w-5 h-5" />
-            </Button>
-            
-            {/* Video upload */}
-            <input
-              ref={videoInputRef}
-              type="file"
-              accept={ALLOWED_VIDEO_TYPES.join(',')}
-              onChange={handleFileSelect}
-              className="hidden"
-            />
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              onClick={() => videoInputRef.current?.click()}
-              className="text-foreground/60 hover:text-foreground"
-              title={`Add video (max ${VIDEO_MAX_MB}MB)`}
-            >
-              <Video className="w-5 h-5" />
-            </Button>
 
-            {/* Progressive disclosure: five dropdowns before a first post is
-                paralysing. Defaults are sane, so keep them folded away until
-                the writer actually wants to change one. */}
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              onClick={() => setShowOptions((v) => !v)}
-              onFocus={() => setComposerEngaged(true)}
-              aria-expanded={showOptions}
-              className="text-foreground/60 hover:text-foreground gap-1.5"
-              title="Post options"
-            >
-              <SlidersHorizontal className="w-4 h-4" />
-              <span className="text-xs">Options</span>
-              {!showOptions && changedOptionCount > 0 && (
-                <span className="ml-0.5 rounded-full bg-signal/20 text-signal text-[10px] font-semibold px-1.5 py-0.5 tabular-nums">
-                  {changedOptionCount}
-                </span>
-              )}
-            </Button>
-
-            {showOptions && (
-              <>
-            {/* Schedule selector */}
-            <ScheduleSelector 
-              scheduledDate={scheduledDate} 
-              onScheduleChange={setScheduledDate} 
-            />
-            
-            {/* Audience selector */}
-            <AudienceSelector
-              selectedCircleIds={selectedCircleIds}
-              visibility={visibility}
-              onSelectionChange={(circleIds, vis) => {
-                setSelectedCircleIds(circleIds);
-                setVisibility(vis);
-              }}
-            />
-            
-            {/* Topic selector */}
-            <Select value={topicId || "none"} onValueChange={(v) => setTopicId(v === "none" ? "" : v)}>
-              <SelectTrigger className="w-auto border-none bg-transparent text-foreground/60 hover:text-foreground h-9 gap-1">
-                <Hash className="w-4 h-4" />
-                <SelectValue placeholder="Topic" />
-              </SelectTrigger>
-              <SelectContent className="glass-panel border">
-                <SelectItem value="none">No topic</SelectItem>
-                {topics?.map((topic) => (
-                  <SelectItem key={topic.id} value={topic.id}>
-                    {topic.icon} {topic.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            
-            {/* Reply control */}
-            <Select value={replyControl} onValueChange={setReplyControl}>
-              <SelectTrigger className="w-auto border-none bg-transparent text-foreground/60 hover:text-foreground h-9 gap-1">
-                <MessageSquareOff className="w-4 h-4" />
-                <SelectValue placeholder="Replies" />
-              </SelectTrigger>
-              <SelectContent className="glass-panel border">
-                <SelectItem value="everyone">Everyone</SelectItem>
-                <SelectItem value="followers">Followers only</SelectItem>
-                <SelectItem value="mutuals">Mutuals only</SelectItem>
-                <SelectItem value="mentioned">Mentioned only</SelectItem>
-                <SelectItem value="none">No replies</SelectItem>
-              </SelectContent>
-            </Select>
-
-            {/* Templates picker */}
-            {templates && templates.length > 0 && (
-              <Popover>
-                <PopoverTrigger asChild>
-                  <Button type="button" variant="ghost" size="sm" className="text-foreground/60 hover:text-foreground gap-1" title="Insert template">
-                    <FileStack className="w-4 h-4" />
+                <div className="flex items-center gap-3">
+                  {content.length > 700 && (
+                    <span
+                      className="text-[12px] tabular-nums font-light"
+                      style={{ color: content.length > 950 ? "hsl(var(--destructive))" : "hsl(var(--foreground) / 0.5)" }}
+                      title={`${content.length}/1000`}
+                    >
+                      {1000 - content.length}
+                    </span>
+                  )}
+                  {(content.trim() || mediaFiles.length > 0) && (
+                    <button type="button" onClick={() => setPreviewOpen(true)} className="quiet p-2 rounded-md" title="preview" aria-label="preview">
+                      <Eye className="w-[15px] h-[15px]" />
+                    </button>
+                  )}
+                  <Button
+                    type="submit"
+                    variant="signal"
+                    size="sm"
+                    disabled={(!content.trim() && mediaFiles.length === 0) || createPost.isPending}
+                    className="rounded-md h-8 px-3.5 text-[13px] font-medium"
+                  >
+                    {createPost.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : scheduledDate ? "schedule" : "post"}
                   </Button>
-                </PopoverTrigger>
-                <PopoverContent className="glass-panel border w-72 p-2">
-                  <p className="text-xs text-foreground/50 px-2 py-1 uppercase tracking-wider">Templates</p>
-                  <div className="space-y-1 max-h-64 overflow-y-auto">
-                    {templates.map((t: any) => (
-                      <button
-                        key={t.id}
-                        type="button"
-                        onClick={() => setContent(prev => prev ? prev + '\n' + t.content : t.content)}
-                        className="w-full text-left p-2 rounded hover:bg-foreground/5 transition-colors"
-                      >
-                        <div className="font-medium text-sm">{t.name}</div>
-                        <div className="text-xs text-foreground/50 line-clamp-1">{t.content}</div>
-                      </button>
-                    ))}
-                  </div>
-                </PopoverContent>
-              </Popover>
+                </div>
+              </div>
             )}
 
-            {/* Expiry selector */}
-            <Select value={expiresIn || "never"} onValueChange={(v) => setExpiresIn(v === "never" ? "" : v)}>
-              <SelectTrigger className="w-auto border-none bg-transparent text-foreground/60 hover:text-foreground h-9 gap-1">
-                <Clock className="w-4 h-4" />
-                <SelectValue placeholder="Expires" />
-              </SelectTrigger>
-              <SelectContent className="glass-panel border">
-                <SelectItem value="never">Never</SelectItem>
-                <SelectItem value="7d">7 days</SelectItem>
-                <SelectItem value="30d">30 days</SelectItem>
-                <SelectItem value="90d">90 days</SelectItem>
-              </SelectContent>
-            </Select>
-              </>
-            )}
-          </div>
-          
-          <div className="flex items-center gap-3">
-            {/* Character arc ring */}
-            <div className="relative w-7 h-7" title={`${content.length}/1000`}>
-              <svg className="w-7 h-7 -rotate-90" viewBox="0 0 28 28">
-                <circle cx="14" cy="14" r="11" stroke="hsl(var(--foreground) / 0.1)" strokeWidth="2.5" fill="none" />
-                <circle
-                  cx="14" cy="14" r="11" fill="none"
-                  stroke={charColor} strokeWidth="2.5" strokeLinecap="round"
-                  strokeDasharray={2 * Math.PI * 11}
-                  strokeDashoffset={(2 * Math.PI * 11) * (1 - charPercent / 100)}
-                  style={{ transition: 'stroke-dashoffset 0.2s, stroke 0.2s' }}
+            {engaged && showOptions && (
+              <div className="flex flex-wrap items-center gap-1 mt-2 -ml-1">
+                <ScheduleSelector scheduledDate={scheduledDate} onScheduleChange={setScheduledDate} />
+                <AudienceSelector
+                  selectedCircleIds={selectedCircleIds}
+                  visibility={visibility}
+                  onSelectionChange={(circleIds, vis) => { setSelectedCircleIds(circleIds); setVisibility(vis); }}
                 />
-              </svg>
-              {content.length > 800 && (
-                <span className="absolute inset-0 flex items-center justify-center text-[9px] font-medium" style={{ color: charColor }}>
-                  {1000 - content.length}
-                </span>
-              )}
-            </div>
-
-            {/* Preview button */}
-            {(content.trim() || mediaFiles.length > 0) && (
-              <Button type="button" variant="ghost" size="sm" onClick={() => setPreviewOpen(true)} className="text-foreground/60 hover:text-foreground" title="Preview">
-                <Eye className="w-4 h-4" />
-              </Button>
+                <Select value={topicId || "none"} onValueChange={(v) => setTopicId(v === "none" ? "" : v)}>
+                  <SelectTrigger className="w-auto border-none bg-transparent quiet h-8 gap-1 text-[13px] shadow-none focus:ring-0">
+                    <Hash className="w-3.5 h-3.5" />
+                    <SelectValue placeholder="topic" />
+                  </SelectTrigger>
+                  <SelectContent className="glass-panel border">
+                    <SelectItem value="none">no topic</SelectItem>
+                    {topics?.map((topic) => (
+                      <SelectItem key={topic.id} value={topic.id}>{topic.icon} {topic.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Select value={replyControl} onValueChange={setReplyControl}>
+                  <SelectTrigger className="w-auto border-none bg-transparent quiet h-8 gap-1 text-[13px] shadow-none focus:ring-0">
+                    <MessageSquareOff className="w-3.5 h-3.5" />
+                    <SelectValue placeholder="replies" />
+                  </SelectTrigger>
+                  <SelectContent className="glass-panel border">
+                    <SelectItem value="everyone">everyone can reply</SelectItem>
+                    <SelectItem value="followers">followers only</SelectItem>
+                    <SelectItem value="mutuals">mutuals only</SelectItem>
+                    <SelectItem value="mentioned">mentioned only</SelectItem>
+                    <SelectItem value="none">no replies</SelectItem>
+                  </SelectContent>
+                </Select>
+                {templates && templates.length > 0 && (
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <button type="button" className="quiet inline-flex items-center gap-1 h-8 px-2 rounded-md text-[13px]" title="insert template">
+                        <FileStack className="w-3.5 h-3.5" /> template
+                      </button>
+                    </PopoverTrigger>
+                    <PopoverContent className="glass-panel border w-72 p-2">
+                      <div className="space-y-0.5 max-h-64 overflow-y-auto">
+                        {templates.map((t: { id: string; name: string; content: string }) => (
+                          <button
+                            key={t.id}
+                            type="button"
+                            onClick={() => setContent((prev) => (prev ? prev + "\n" + t.content : t.content))}
+                            className="w-full text-left p-2 rounded-md hover:bg-foreground/5 transition-colors"
+                          >
+                            <div className="text-[13px] text-foreground">{t.name}</div>
+                            <div className="text-[12px] text-foreground/50 line-clamp-1 font-light">{t.content}</div>
+                          </button>
+                        ))}
+                      </div>
+                    </PopoverContent>
+                  </Popover>
+                )}
+                <Select value={expiresIn || "never"} onValueChange={(v) => setExpiresIn(v === "never" ? "" : v)}>
+                  <SelectTrigger className="w-auto border-none bg-transparent quiet h-8 gap-1 text-[13px] shadow-none focus:ring-0">
+                    <Clock className="w-3.5 h-3.5" />
+                    <SelectValue placeholder="expires" />
+                  </SelectTrigger>
+                  <SelectContent className="glass-panel border">
+                    <SelectItem value="never">keeps forever</SelectItem>
+                    <SelectItem value="7d">gone in 7 days</SelectItem>
+                    <SelectItem value="30d">gone in 30 days</SelectItem>
+                    <SelectItem value="90d">gone in 90 days</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
             )}
-            <Button
-              type="submit"
-              disabled={(!content.trim() && mediaFiles.length === 0) || createPost.isPending}
-              className="rounded-xl font-light bg-foreground text-background hover:bg-foreground/90"
-            >
-              {createPost.isPending ? (
-                <Loader2 className="w-4 h-4 animate-spin" />
-              ) : (
-                <>
-                  <Send className="w-4 h-4 mr-2" />
-                  Post
-                </>
-              )}
-            </Button>
           </div>
         </div>
       </form>
@@ -649,10 +613,10 @@ const PostComposer = () => {
       <Dialog open={previewOpen} onOpenChange={setPreviewOpen}>
         <DialogContent className="glass-panel border max-w-lg">
           <DialogHeader>
-            <DialogTitle>Preview</DialogTitle>
+            <DialogTitle className="font-light lowercase">preview</DialogTitle>
           </DialogHeader>
           <div className="glass-card rounded-xl p-4 my-2">
-            <div className="text-xs text-foreground/40 uppercase tracking-wider mb-2">How your post will look</div>
+            <div className="text-[11px] text-foreground/40 uppercase tracking-[0.2em] font-light mb-2">how it will read</div>
             <p className="text-foreground font-light whitespace-pre-wrap leading-relaxed">{content || <span className="text-foreground/40 italic">No text</span>}</p>
             {mediaPreviews.length > 0 && (
               <div className={`grid gap-2 mt-3 ${mediaPreviews.length === 1 ? 'grid-cols-1' : 'grid-cols-2'}`}>
@@ -665,9 +629,9 @@ const PostComposer = () => {
             )}
           </div>
           <DialogFooter className="gap-2">
-            <Button variant="ghost" onClick={() => setPreviewOpen(false)}>Keep editing</Button>
+            <Button variant="ghost" onClick={() => setPreviewOpen(false)} className="font-light">keep editing</Button>
             <Button onClick={() => { setPreviewOpen(false); createPost.mutate(); }} disabled={createPost.isPending}>
-              <Send className="w-4 h-4 mr-2" /> Publish
+              post
             </Button>
           </DialogFooter>
         </DialogContent>

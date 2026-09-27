@@ -1,7 +1,8 @@
 import { useState } from "react";
-import { useParams, Link, useNavigate } from "react-router-dom";
+import { useParams, useNavigate } from "react-router-dom";
 import DashboardLayout from "@/components/layout/DashboardLayout";
 import PostCard from "@/components/feed/PostCard";
+import FeedSkeleton from "@/components/feed/FeedSkeleton";
 import UserAvatar from "@/components/UserAvatar";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
@@ -9,15 +10,14 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import PageHeader from "@/components/layout/PageHeader";
+import EmptyState from "@/components/ui/empty-state";
 import { pillTabsListClass, pillTabsTriggerClass } from "@/components/layout/PillTabs";
-import { 
-  Loader2, Calendar, MessageSquare, Heart, 
-  UserPlus, UserMinus, ArrowLeft, HelpCircle
-} from "lucide-react";
+import { Loader2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import AskQuestionForm from "@/components/qa/AskQuestionForm";
 import PublicQADisplay from "@/components/qa/PublicQADisplay";
 import { useStorageUrl } from "@/lib/storageUrl";
+import { ProfileFacts, ProfileSkeleton } from "@/pages/Profile";
 
 const UserProfile = () => {
   const { username } = useParams<{ username: string }>();
@@ -34,7 +34,7 @@ const UserProfile = () => {
       if (!username) return null;
       const { data } = await supabase
         .from('profiles')
-        .select('user_id, username, display_name, avatar_url, cover_url, bio, created_at')
+        .select('user_id, username, display_name, avatar_url, cover_url, bio, created_at, location, pronouns, website')
         .eq('username', username)
         .maybeSingle();
       return data;
@@ -76,7 +76,7 @@ const UserProfile = () => {
         .eq('viewer_user_id', user.id)
         .gte('viewed_at', oneHourAgo)
         .maybeSingle();
-      
+
       if (!recentView) {
         await supabase.from('profile_views').insert({
           profile_user_id: profile.user_id,
@@ -109,13 +109,13 @@ const UserProfile = () => {
     queryKey: ['user-posts', profile?.user_id],
     queryFn: async () => {
       if (!profile) return [];
-      
+
       const { data: postsData } = await supabase
         .from('posts')
         .select('*')
         .eq('user_id', profile.user_id)
         .order('created_at', { ascending: false });
-      
+
       if (!postsData) return [];
 
       const postIds = postsData.map(p => p.id);
@@ -124,7 +124,7 @@ const UserProfile = () => {
         .from('post_likes')
         .select('post_id')
         .in('post_id', postIds);
-      
+
       const likesCountMap = new Map<string, number>();
       likesData?.forEach(l => {
         likesCountMap.set(l.post_id, (likesCountMap.get(l.post_id) || 0) + 1);
@@ -135,7 +135,7 @@ const UserProfile = () => {
         .select('post_id')
         .eq('user_id', user.id)
         .in('post_id', postIds) : { data: [] };
-      
+
       const userLikedSet = new Set(userLikes?.map(l => l.post_id) || []);
 
       const { data: userBookmarks } = user ? await supabase
@@ -143,14 +143,14 @@ const UserProfile = () => {
         .select('post_id')
         .eq('user_id', user.id)
         .in('post_id', postIds) : { data: [] };
-      
+
       const userBookmarkedSet = new Set(userBookmarks?.map(b => b.post_id) || []);
 
       const { data: commentsData } = await supabase
         .from('comments')
         .select('post_id')
         .in('post_id', postIds);
-      
+
       const commentsCountMap = new Map<string, number>();
       commentsData?.forEach(c => {
         commentsCountMap.set(c.post_id, (commentsCountMap.get(c.post_id) || 0) + 1);
@@ -173,17 +173,17 @@ const UserProfile = () => {
     queryKey: ['follow-stats', profile?.user_id],
     queryFn: async () => {
       if (!profile) return { followers: 0, following: 0 };
-      
+
       const { count: followers } = await supabase
         .from('follows')
         .select('*', { count: 'exact', head: true })
         .eq('following_id', profile.user_id);
-      
+
       const { count: following } = await supabase
         .from('follows')
         .select('*', { count: 'exact', head: true })
         .eq('follower_id', profile.user_id);
-      
+
       return { followers: followers || 0, following: following || 0 };
     },
     enabled: !!profile
@@ -193,7 +193,7 @@ const UserProfile = () => {
   const followMutation = useMutation({
     mutationFn: async () => {
       if (!user || !profile) throw new Error("Not authenticated");
-      
+
       if (isFollowing) {
         await supabase
           .from('follows')
@@ -209,7 +209,7 @@ const UserProfile = () => {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['is-following'] });
       queryClient.invalidateQueries({ queryKey: ['follow-stats'] });
-      toast({ title: isFollowing ? "Unfollowed" : "Following" });
+      toast({ title: isFollowing ? "unfollowed" : "following" });
     }
   });
 
@@ -218,9 +218,8 @@ const UserProfile = () => {
   if (loadingProfile) {
     return (
       <DashboardLayout>
-        <div className="flex items-center justify-center py-12">
-          <Loader2 className="w-8 h-8 animate-spin text-foreground/60" />
-        </div>
+        <PageHeader title="profile" />
+        <ProfileSkeleton />
       </DashboardLayout>
     );
   }
@@ -228,180 +227,154 @@ const UserProfile = () => {
   if (!profile) {
     return (
       <DashboardLayout>
-        <div className="max-w-2xl mx-auto px-4 py-12 text-center">
-          <p className="text-foreground/60 font-light">User not found</p>
-          <Link to="/explore" className="text-foreground hover:underline mt-4 inline-block">
-            ← Back to Explore
-          </Link>
-        </div>
+        <PageHeader title="profile" subtitle="no one by that name." />
+        <EmptyState
+          title="no one here."
+          description={`there is no @${username ?? ""} in this room. they may have changed their name or left.`}
+          actionLabel="find people"
+          actionTo="/explore"
+        />
       </DashboardLayout>
     );
   }
 
+  const name = profile.display_name || profile.username;
+
   return (
     <DashboardLayout>
-      <div className="max-w-2xl mx-auto pb-6">
-        <PageHeader
-          title={profile?.display_name || profile?.username || "Profile"}
-          statusDot="bg-foreground/40"
-          statusLabel={profile?.username ? `@${profile.username}` : undefined}
-          actions={
-            <Link
-              to="/explore"
-              className="inline-flex items-center gap-1.5 text-xs font-medium text-foreground/60 hover:text-foreground bg-foreground/5 hover:bg-foreground/10 border border-foreground/10 rounded-lg px-3 h-9"
-            >
-              <ArrowLeft className="w-3.5 h-3.5" />
-              Back
-            </Link>
-          }
-        />
+      <PageHeader
+        title="profile"
+        subtitle={isOwnProfile ? "how the room sees you." : "what they chose to share."}
+        actions={
+          <button
+            type="button"
+            onClick={() => (window.history.length > 1 ? navigate(-1) : navigate('/explore'))}
+            className="quiet text-[13px] px-2 h-9 rounded-md"
+          >
+            ← back
+          </button>
+        }
+      />
 
-        {/* Cover image */}
-        <div className="relative h-32 sm:h-48 bg-foreground/5 overflow-hidden">
-          {coverUrl && (
-            <img 
-              src={coverUrl} 
-              alt="" 
-              className="w-full h-full object-cover"
-            />
-          )}
-          <div className="absolute inset-0 bg-gradient-to-b from-transparent to-background/40 pointer-events-none" />
-        </div>
-
-        {/* Profile info */}
-        <div className="px-4">
-          <div className="relative -mt-16 mb-4">
-            <UserAvatar
-              avatarUrl={profile?.avatar_url}
-              username={profile?.username}
-              size="xl"
-              className="border-4 border-background"
-            />
+      {coverUrl && (
+        <div className="px-5 sm:px-8 pb-1">
+          <div className="relative h-[120px] rounded-md overflow-hidden">
+            <img src={coverUrl} alt="" className="wallpaper w-full h-full object-cover" />
+            <div className="absolute inset-0 bg-background/40 pointer-events-none" />
           </div>
+        </div>
+      )}
 
-          <div className="flex items-start justify-between mb-4">
-            <div className="flex-1">
-              <h1 className="text-xl sm:text-2xl font-normal text-foreground">
-                {profile?.display_name || profile?.username}
-              </h1>
-              <p className="text-foreground/40 font-light">@{profile?.username}</p>
-              {profile?.bio && (
-                <p className="text-foreground/80 font-light mt-2">{profile.bio}</p>
-              )}
-              
-              <div className="flex items-center gap-4 mt-3 text-sm">
-                <div className="flex items-center gap-1 text-foreground/60">
-                  <Calendar className="w-4 h-4" />
-                  <span className="font-light">
-                    Joined {new Date(profile?.created_at || '').toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
-                  </span>
-                </div>
-              </div>
-              
-              <div className="flex items-center gap-4 mt-2">
-                <span className="text-foreground font-normal">
-                  {followStats?.following} <span className="text-foreground/60 font-light">Following</span>
-                </span>
-                <span className="text-foreground font-normal">
-                  {followStats?.followers} <span className="text-foreground/60 font-light">Followers</span>
-                </span>
+      <div className="row px-5 sm:px-8 py-5">
+        <div className="flex items-start gap-4">
+          <UserAvatar avatarUrl={profile.avatar_url} username={profile.username} size="lg" />
+
+          <div className="flex-1 min-w-0">
+            <div className="flex items-start justify-between gap-3">
+              <h2 className="min-w-0 text-[26px] font-extralight leading-tight tracking-[-0.02em] text-foreground [overflow-wrap:anywhere]">
+                {name}
+              </h2>
+              <div className="flex items-center gap-1 shrink-0 -mr-2">
+                {isOwnProfile ? (
+                  <button type="button" onClick={() => navigate('/profile')} className="quiet px-2 h-9 rounded-md text-[13px]">
+                    edit
+                  </button>
+                ) : (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => navigate('/messages', { state: { userId: profile.user_id } })}
+                      className="quiet px-2 h-9 rounded-md text-[13px]"
+                    >
+                      message
+                    </button>
+                    {isFollowing ? (
+                      <button
+                        type="button"
+                        onClick={() => followMutation.mutate()}
+                        disabled={followMutation.isPending}
+                        aria-pressed="true"
+                        className="quiet px-2 h-9 rounded-md text-[13px] disabled:opacity-50"
+                      >
+                        {followMutation.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : "following"}
+                      </button>
+                    ) : (
+                      <Button
+                        variant="signal"
+                        size="sm"
+                        onClick={() => followMutation.mutate()}
+                        disabled={followMutation.isPending || !user}
+                        className="ml-1"
+                      >
+                        {followMutation.isPending && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                        follow
+                      </Button>
+                    )}
+                  </>
+                )}
               </div>
             </div>
-            
-            {!isOwnProfile && (
-              <div className="flex gap-2">
-                <Button 
-                  onClick={() => navigate('/messages', { state: { userId: profile.user_id } })}
-                  variant="ghost" 
-                  size="icon"
-                  className="rounded-lg"
-                  aria-label="Message"
-                >
-                  <MessageSquare className="w-5 h-5" />
-                </Button>
-                <Button 
-                  onClick={() => followMutation.mutate()}
-                  variant={isFollowing ? "outline" : "default"}
-                  className="rounded-lg font-light"
-                  disabled={followMutation.isPending}
-                >
-                  {isFollowing ? (
-                    <>
-                      <UserMinus className="w-4 h-4 mr-2" />
-                      Unfollow
-                    </>
-                  ) : (
-                    <>
-                      <UserPlus className="w-4 h-4 mr-2" />
-                      Follow
-                    </>
-                  )}
-                </Button>
-              </div>
+            <p className="mt-0.5 text-[13px] font-light text-foreground/40">@{profile.username}</p>
+            {profile.bio && (
+              <p className="mt-2.5 text-[15px] font-light leading-relaxed text-foreground/85 whitespace-pre-wrap [overflow-wrap:anywhere]">
+                {profile.bio}
+              </p>
             )}
-          </div>
-        </div>
-
-        {/* Anonymous Q&A */}
-        {!isOwnProfile && (
-          <div className="px-4 mt-4">
-            <AskQuestionForm 
-              recipientUserId={profile.user_id} 
-              recipientUsername={profile.username} 
+            <ProfileFacts
+              createdAt={profile.created_at}
+              location={profile.location}
+              pronouns={profile.pronouns}
+              website={profile.website}
             />
+            <p className="mt-2 text-[13px] font-light text-foreground/60 tabular-nums">
+              {followStats?.following ?? 0} following
+              <span className="mx-1.5 text-foreground/25">·</span>
+              {followStats?.followers ?? 0} followers
+            </p>
           </div>
-        )}
-
-        {/* Public Q&A Display */}
-        <div className="px-4 mt-4">
-          <PublicQADisplay userId={profile.user_id} />
-        </div>
-
-        {/* Tabs */}
-        <div className="px-4 mt-4">
-          <Tabs value={activeTab} onValueChange={setActiveTab}>
-            <TabsList className={pillTabsListClass}>
-              <TabsTrigger value="posts" className={pillTabsTriggerClass}>Posts</TabsTrigger>
-              <TabsTrigger value="likes" className={pillTabsTriggerClass}>
-                <Heart className="w-3.5 h-3.5" /> Likes
-              </TabsTrigger>
-            </TabsList>
-
-            <TabsContent value="posts" className="mt-4">
-              {loadingPosts ? (
-                <div className="flex items-center justify-center py-8">
-                  <Loader2 className="w-6 h-6 animate-spin text-foreground/60" />
-                </div>
-              ) : posts && posts.length > 0 ? (
-                <div className="space-y-4">
-                  {posts.map((post: any) => (
-                    <PostCard
-                      key={post.id}
-                      post={post}
-                      likesCount={post.likesCount}
-                      commentsCount={post.commentsCount}
-                      isLiked={post.isLiked}
-                      isBookmarked={post.isBookmarked}
-                    />
-                  ))}
-                </div>
-              ) : (
-                <div className="glass-card rounded-xl p-8 text-center">
-                  <p className="text-foreground/60 font-light">
-                    No posts yet.
-                  </p>
-                </div>
-              )}
-            </TabsContent>
-
-            <TabsContent value="likes" className="mt-4">
-              <div className="glass-card rounded-xl p-8 text-center">
-                <p className="text-foreground/60 font-light">Likes are private.</p>
-              </div>
-            </TabsContent>
-          </Tabs>
         </div>
       </div>
+
+      <Tabs value={activeTab} onValueChange={setActiveTab}>
+        <div className="px-5 sm:px-8 pt-2">
+          <TabsList className={pillTabsListClass}>
+            <TabsTrigger value="posts" className={pillTabsTriggerClass}>posts</TabsTrigger>
+            <TabsTrigger value="qa" className={pillTabsTriggerClass}>q&amp;a</TabsTrigger>
+          </TabsList>
+        </div>
+
+        <TabsContent value="posts" className="mt-0">
+          {loadingPosts ? (
+            <FeedSkeleton count={3} />
+          ) : posts && posts.length > 0 ? (
+            <div className="stagger">
+              {posts.map((post, idx) => (
+                <div key={post.id} style={{ "--i": Math.min(idx, 8) } as React.CSSProperties}>
+                  <PostCard
+                    post={post}
+                    likesCount={post.likesCount}
+                    commentsCount={post.commentsCount}
+                    isLiked={post.isLiked}
+                    isBookmarked={post.isBookmarked}
+                  />
+                </div>
+              ))}
+            </div>
+          ) : (
+            <EmptyState
+              title="nothing posted yet."
+              description={`${name} has not written anything here. follow them and you will see it when they do.`}
+            />
+          )}
+        </TabsContent>
+
+        <TabsContent value="qa" className="mt-0">
+          {!isOwnProfile && (
+            <AskQuestionForm recipientUserId={profile.user_id} recipientUsername={profile.username} />
+          )}
+          <PublicQADisplay userId={profile.user_id} />
+        </TabsContent>
+      </Tabs>
     </DashboardLayout>
   );
 };

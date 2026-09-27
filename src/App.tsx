@@ -64,7 +64,7 @@ const queryClient = new QueryClient({
  */
 const RouteFallback = () => (
   <div className="min-h-screen bg-background relative" aria-busy="true" aria-label="loading">
-    <div className="fixed inset-0 bg-gradient-to-b from-background/40 via-background/60 to-background/85" />
+    <div className="wallpaper-scrim fixed inset-0" />
     <div className="relative z-10 max-w-2xl mx-auto px-4 pt-20 lg:pt-10 space-y-4 stagger">
       <div className="h-8 w-40 rounded-md bg-foreground/[0.06] animate-pulse" style={{ "--i": 0 } as React.CSSProperties} />
       {[1, 2, 3].map((i) => (

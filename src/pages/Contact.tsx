@@ -1,14 +1,12 @@
-import GlassHeader from "@/components/GlassHeader";
+import PublicShell from "@/components/landing/PublicShell";
 import { Helmet } from "react-helmet-async";
-import FooterSection from "@/components/landing/FooterSection";
-import backgroundWallpaper from "@/assets/background-wallpaper.webp";
 import { Mail } from "lucide-react";
 import { Link, useParams } from "react-router-dom";
 import NotFound from "@/pages/NotFound";
 
 const Contact = () => {
   return (
-    <div className="min-h-screen bg-background relative">
+    <PublicShell>
       <Helmet>
         <title>contact — bosley</title>
         <meta
@@ -20,49 +18,36 @@ const Contact = () => {
         <meta property="og:title" content="contact bosley" />
         <meta property="og:description" content="email asher@bosley.app for support, feedback, or a human." />
       </Helmet>
-      <div
-        className="fixed inset-0 bg-cover bg-center bg-no-repeat"
-        style={{ backgroundImage: `url(${backgroundWallpaper})` }}
-      />
-
-      <div className="relative z-10">
-        <GlassHeader />
-
-        <main className="pt-32 pb-20 px-4 sm:px-6 lg:px-8">
-          <div className="max-w-2xl mx-auto">
-            <div className="glass-card rounded-2xl p-8 sm:p-12 text-center">
-              <div className="w-16 h-16 mx-auto mb-6 rounded-full bg-foreground/10 flex items-center justify-center">
-                <Mail className="w-8 h-8 text-foreground" />
-              </div>
-
-              <h1 className="text-3xl sm:text-4xl font-light text-foreground mb-4">contact</h1>
-
-              <p className="text-foreground/70 font-light mb-8 leading-relaxed">
-                questions, feedback, something broken? write to us and we'll get
-                back to you as soon as possible.
-              </p>
-
-              <a
-                href="mailto:asher@bosley.app"
-                className="inline-flex items-center gap-3 px-8 py-4 bg-foreground text-background rounded-xl font-medium hover:bg-foreground/90 transition-colors"
-              >
-                <Mail className="w-5 h-5" />
-                asher@bosley.app
-              </a>
-
-              <div className="mt-12 pt-8 border-t border-border/20">
-                <h2 className="text-lg font-medium text-foreground mb-4">response time</h2>
-                <p className="text-foreground/60 font-light text-sm">
-                  we usually answer within 24–48 business hours.
-                </p>
-              </div>
-            </div>
+<article className="doc">
+        <p className="text-foreground/40 text-[11px] font-light tracking-[0.28em] uppercase mb-6">contact</p>
+        <h1 className="text-[2.5rem] sm:text-[3.25rem] font-extralight tracking-[-0.04em] leading-[0.98] text-foreground">
+          write to a person,
+          <br />
+          <span className="font-thin text-foreground/70">not a form.</span>
+        </h1>
+        <p className="mt-8 text-foreground/60 font-light text-[15.5px] leading-relaxed max-w-md">
+          questions, feedback, something broken. one address, read by the person who built this.
+        </p>
+        <a
+          href="mailto:asher@bosley.app"
+          className="mt-8 inline-flex items-center gap-2 text-[17px] text-foreground hover:text-signal transition-colors underline-offset-4 hover:underline"
+        >
+          <Mail className="w-4 h-4" /> asher@bosley.app
+        </a>
+        <dl className="mt-14 pt-6 border-t border-foreground/10 grid sm:grid-cols-2 gap-6 text-[13px] font-light">
+          <div>
+            <dt className="text-foreground/40 uppercase tracking-[0.2em] text-[10px]">response time</dt>
+            <dd className="text-foreground/75 mt-1">usually within 24–48 business hours.</dd>
           </div>
-        </main>
-
-        <FooterSection />
-      </div>
-    </div>
+          <div>
+            <dt className="text-foreground/40 uppercase tracking-[0.2em] text-[10px]">security</dt>
+            <dd className="text-foreground/75 mt-1">
+              vulnerabilities go to <a href="mailto:security@bosley.app" className="text-foreground hover:text-signal">security@bosley.app</a>.
+            </dd>
+          </div>
+        </dl>
+      </article>
+    </PublicShell>
   );
 };
 
@@ -131,7 +116,7 @@ export const For = () => {
   const path = slug ? `/for/${slug}` : "/for";
   const url = `https://bosley.app${path}`;
   return (
-    <div className="min-h-screen bg-background relative">
+    <PublicShell>
       <Helmet>
         <title>{hub.title}</title>
         <meta name="description" content={hub.description} />
@@ -149,17 +134,11 @@ export const For = () => {
           })}
         </script>
       </Helmet>
-      <div
-        className="fixed inset-0 bg-cover bg-center bg-no-repeat"
-        style={{ backgroundImage: `url(${backgroundWallpaper})` }}
-      />
-      <div className="relative z-10">
-        <GlassHeader />
-        <main className="pt-32 pb-20 px-4">
-          <div className="max-w-2xl mx-auto glass-card rounded-2xl p-8 sm:p-12">
-            <h1 className="text-3xl sm:text-4xl font-extralight text-foreground mb-6">{hub.h1}</h1>
+      <article className="doc">
+
+            <h1 className="text-[2.5rem] sm:text-[3.25rem] font-extralight tracking-[-0.04em] leading-[0.98] text-foreground mb-8">{hub.h1}</h1>
             {hub.body.map((p) => (
-              <p key={p} className="text-foreground/70 font-light mb-4 leading-relaxed">
+              <p key={p} className="text-foreground/65 font-light text-[15.5px] mb-4 leading-relaxed max-w-lg">
                 {p}
               </p>
             ))}
@@ -179,10 +158,7 @@ export const For = () => {
                 </Link>
               </nav>
             )}
-          </div>
-        </main>
-        <FooterSection />
-      </div>
-    </div>
+      </article>
+    </PublicShell>
   );
 };

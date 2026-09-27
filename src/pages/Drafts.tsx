@@ -1,19 +1,18 @@
-import { useState } from "react";
 import DashboardLayout from "@/components/layout/DashboardLayout";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Button } from "@/components/ui/button";
-import { FileText, Trash2, Loader2, Edit } from "lucide-react";
-import { useToast } from "@/hooks/use-toast";
+import { Trash2 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
+import { useToast } from "@/hooks/use-toast";
 import EmptyState from "@/components/ui/empty-state";
+import PageHeader from "@/components/layout/PageHeader";
 
 const Drafts = () => {
   const { user } = useAuth();
   const { toast } = useToast();
-  const queryClient = useQueryClient();
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
 
   const { data: drafts, isLoading } = useQuery({
     queryKey: ['drafts', user?.id],
@@ -36,52 +35,72 @@ const Drafts = () => {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['drafts'] });
-      toast({ title: "Draft deleted" });
+      toast({ title: "draft deleted" });
     }
   });
 
   const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleDateString('en-US', {
-      month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'
-    });
+    const date = new Date(dateString);
+    const now = new Date();
+    const minutes = Math.floor((now.getTime() - date.getTime()) / 60000);
+    if (minutes < 1) return "just now";
+    if (minutes < 60) return `${minutes}m ago`;
+    const hours = Math.floor(minutes / 60);
+    if (hours < 24) return `${hours}h ago`;
+    const days = Math.floor(hours / 24);
+    if (days < 7) return `${days}d ago`;
+    return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }).toLowerCase();
   };
 
   return (
     <DashboardLayout>
-      <div className="max-w-2xl mx-auto px-4 py-6">
-        <div className="flex items-center gap-2 mb-6">
-          <FileText className="w-6 h-6 text-foreground/80" />
-          <h1 className="text-2xl font-light text-foreground">Drafts</h1>
-        </div>
+      <PageHeader title="drafts" subtitle="unfinished. saved on this device and your account." />
 
-        {isLoading ? (
-          <div className="flex justify-center py-12"><Loader2 className="w-8 h-8 animate-spin text-foreground/60" /></div>
-        ) : drafts && drafts.length > 0 ? (
-          <div className="space-y-3">
-            {drafts.map(draft => (
-              <div key={draft.id} className="glass-card rounded-xl p-4 flex items-start justify-between gap-3 hover:bg-accent/10 transition-colors">
-                <div className="flex-1 min-w-0">
-                  <p className="text-foreground font-light line-clamp-3">{draft.content || 'Empty draft'}</p>
-                  <p className="text-foreground/40 text-xs font-light mt-2">Last edited {formatDate(draft.updated_at)}</p>
-                </div>
-                <div className="flex gap-1">
-                  <Button variant="ghost" size="sm" onClick={() => deleteDraft.mutate(draft.id)} className="text-foreground/40 hover:text-destructive">
-                    <Trash2 className="w-4 h-4" />
-                  </Button>
-                </div>
-              </div>
-            ))}
-          </div>
-        ) : (
-          <EmptyState
-            icon={FileText}
-            title="No drafts yet"
-            description="Anything you start writing and leave unfinished is saved here automatically."
-            actionLabel="Start writing"
-            actionTo="/dashboard"
-          />
-        )}
-      </div>
+      {isLoading ? (
+        <div className="stagger" aria-busy="true">
+          {[0, 1, 2].map((i) => (
+            <div key={i} className="row px-5 sm:px-8 py-5 space-y-2.5" style={{ "--i": i } as React.CSSProperties}>
+              <div className="h-3 w-full rounded bg-foreground/[0.06] animate-pulse" />
+              <div className="h-3 w-3/4 rounded bg-foreground/[0.06] animate-pulse" />
+              <div className="h-3 w-16 rounded bg-foreground/[0.05] animate-pulse" />
+            </div>
+          ))}
+        </div>
+      ) : drafts && drafts.length > 0 ? (
+        <div className="stagger">
+          {drafts.map((draft, idx) => (
+            <div key={draft.id} className="row px-5 sm:px-8 py-5 flex items-start justify-between gap-4" style={{ "--i": Math.min(idx, 8) } as React.CSSProperties}>
+              <button
+                type="button"
+                onClick={() => navigate("/dashboard", { state: { compose: true, draft: { id: draft.id, content: draft.content ?? "" } } })}
+                className="flex-1 min-w-0 text-left group"
+              >
+                <p className={`text-[15px] font-light leading-relaxed line-clamp-3 whitespace-pre-wrap [overflow-wrap:anywhere] ${draft.content ? "text-foreground/90" : "text-foreground/35"}`}>
+                  {draft.content || "empty"}
+                </p>
+                <p className="mt-2 text-[12px] font-light text-foreground/40 tabular-nums">
+                  edited {formatDate(draft.updated_at)}
+                  <span className="ml-3 text-foreground/40 group-hover:text-foreground transition-colors">continue →</span>
+                </p>
+              </button>
+              <button
+                onClick={() => deleteDraft.mutate(draft.id)}
+                aria-label="delete draft"
+                className="quiet p-2 -mr-2 rounded-md hover:text-destructive shrink-0"
+              >
+                <Trash2 className="w-4 h-4" />
+              </button>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <EmptyState
+          title="nothing unfinished."
+          description="anything you start and leave is kept here until you post it or let it go."
+          actionLabel="start writing"
+          actionTo="/dashboard"
+        />
+      )}
     </DashboardLayout>
   );
 };

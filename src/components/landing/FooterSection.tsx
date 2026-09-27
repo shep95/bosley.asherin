@@ -19,12 +19,8 @@ const FooterSection = () => {
               a quiet room on the internet. chronological feed. no ads.
             </p>
             <div className="flex items-center gap-3 mt-6">
-              <a
-                href="mailto:asher@bosley.app"
-                className="w-9 h-9 rounded-full border border-border/30 flex items-center justify-center text-foreground/70 hover:text-foreground hover:border-foreground/40 transition-all"
-                aria-label="email asher@bosley.app"
-              >
-                <Mail className="w-3.5 h-3.5" />
+              <a href="mailto:asher@bosley.app" className="quiet inline-flex items-center gap-2 text-[13px] font-light">
+                <Mail className="w-3.5 h-3.5" /> asher@bosley.app
               </a>
             </div>
           </div>

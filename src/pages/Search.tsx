@@ -3,21 +3,45 @@ import DashboardLayout from "@/components/layout/DashboardLayout";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Search as SearchIcon, Loader2, UserPlus, UserMinus, Hash, TrendingUp, X } from "lucide-react";
-import { useToast } from "@/hooks/use-toast";
+import { Search as SearchIcon, X } from "lucide-react";
 import { Link } from "react-router-dom";
 import UserAvatar from "@/components/UserAvatar";
 import PostCard from "@/components/feed/PostCard";
+import FeedSkeleton from "@/components/feed/FeedSkeleton";
 import PageHeader from "@/components/layout/PageHeader";
-import { pillTabsListClass, pillTabsTriggerClass } from "@/components/layout/PillTabs";
+import EmptyState from "@/components/ui/empty-state";
 import { escapeFilterValue } from "@/lib/sanitize";
+
+type Person = { user_id: string; username: string; display_name: string | null; avatar_url: string | null; isFollowing?: boolean };
+type Tag = { id: string; name: string; post_count: number };
+
+const TagRow = ({ h, idx, onOpen }: { h: Tag; idx: number; onOpen: (h: Tag) => void }) => (
+  <button
+    onClick={() => onOpen(h)}
+    className="row w-full text-left px-5 sm:px-8 py-4 flex items-baseline justify-between gap-4"
+    style={{ "--i": Math.min(idx, 8) } as React.CSSProperties}
+  >
+    <span className="text-[15px] font-light text-foreground truncate">#{h.name}</span>
+    <span className="text-[13px] font-light text-foreground/40 tabular-nums whitespace-nowrap">{h.post_count} posts</span>
+  </button>
+);
+
+const RowSkeleton = ({ count = 3 }: { count?: number }) => (
+  <div className="stagger" aria-busy="true">
+    {Array.from({ length: count }).map((_, i) => (
+      <div key={i} className="row px-5 sm:px-8 py-4 flex items-center gap-4" style={{ "--i": i } as React.CSSProperties}>
+        <div className="w-10 h-10 rounded-full bg-foreground/[0.07] animate-pulse" />
+        <div className="flex-1 space-y-2">
+          <div className="h-3 w-28 rounded bg-foreground/[0.08] animate-pulse" />
+          <div className="h-3 w-44 rounded bg-foreground/[0.06] animate-pulse" />
+        </div>
+      </div>
+    ))}
+  </div>
+);
 
 const Search = () => {
   const { user } = useAuth();
-  const { toast } = useToast();
   const queryClient = useQueryClient();
   const [query, setQuery] = useState("");
   const [activeTab, setActiveTab] = useState("posts");
@@ -129,144 +153,113 @@ const Search = () => {
   });
 
   const isLoading = activeTab === 'posts' ? postsLoading : activeTab === 'users' ? usersLoading : hashtagsLoading;
+  const openTag = (h: Tag) => { setQuery(`#${h.name}`); setActiveTab('posts'); };
 
   return (
     <DashboardLayout>
-      <div className="max-w-2xl mx-auto">
-        <PageHeader
-          title="Search"
-          statusDot="bg-foreground/40"
-          statusLabel={query ? `Searching "${query}"` : "Discover posts, people & hashtags"}
-          belowRow={
-            <div className="relative">
-              <SearchIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-foreground/40 pointer-events-none" />
-              <Input
-                placeholder="Search posts, people, hashtags..."
+      <PageHeader
+        title="search"
+        subtitle="posts, people, tags."
+        belowRow={
+          <>
+            <label className="field flex items-center gap-3">
+              <SearchIcon className="w-4 h-4 text-foreground/40 shrink-0" aria-hidden />
+              <input
+                type="search"
+                placeholder="what are you looking for"
                 value={query}
                 onChange={e => setQuery(e.target.value)}
-                className="pl-10 pr-10 bg-foreground/5 border-foreground/10 rounded-lg font-light h-11 focus-visible:ring-foreground/20"
+                autoFocus
+                aria-label="search"
+                className="w-full bg-transparent text-[15px] font-light text-foreground placeholder:text-foreground/35 focus:outline-none [&::-webkit-search-cancel-button]:hidden"
               />
               {query && (
-                <button
-                  onClick={() => setQuery("")}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-foreground/40 hover:text-foreground"
-                >
+                <button onClick={() => setQuery("")} aria-label="clear" className="quiet p-2 -mr-2 rounded-md">
                   <X className="w-4 h-4" />
                 </button>
               )}
-            </div>
-          }
-        />
-
-        <div className="px-4 py-6">
-        {/* Trending when no query */}
-        {!query && trending && trending.length > 0 && (
-          <div className="glass-card rounded-xl p-4 mb-6">
-            <div className="flex items-center gap-2 mb-3">
-              <TrendingUp className="w-4 h-4 text-foreground/60" />
-              <h2 className="text-foreground/80 font-light">Trending</h2>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              {trending.map(h => (
-                <button
-                  key={h.id}
-                  onClick={() => { setQuery(`#${h.name}`); setActiveTab('posts'); }}
-                  className="px-3 py-1.5 rounded-lg bg-foreground/5 text-foreground/70 text-sm font-light hover:bg-foreground/10 transition-colors"
-                >
-                  #{h.name} <span className="text-foreground/30 ml-1">{h.post_count}</span>
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {query && (
-          <Tabs value={activeTab} onValueChange={setActiveTab}>
-            <TabsList className={`${pillTabsListClass} mb-6`}>
-              <TabsTrigger value="posts" className={pillTabsTriggerClass}>Posts</TabsTrigger>
-              <TabsTrigger value="users" className={pillTabsTriggerClass}>People</TabsTrigger>
-              <TabsTrigger value="hashtags" className={pillTabsTriggerClass}>Hashtags</TabsTrigger>
-            </TabsList>
-
-            {isLoading ? (
-              <div className="flex justify-center py-12"><Loader2 className="w-8 h-8 animate-spin text-foreground/60" /></div>
-            ) : (
-              <>
-                <TabsContent value="posts">
-                  {posts && posts.length > 0 ? (
-                    <div className="space-y-4">
-                      {posts.map((post: any) => (
-                        <PostCard key={post.id} post={post} likesCount={post.likesCount} commentsCount={post.commentsCount} isLiked={post.isLiked} isBookmarked={post.isBookmarked} />
-                      ))}
-                    </div>
-                  ) : (
-                    <div className="glass-card rounded-xl p-8 text-center">
-                      <p className="text-foreground/60 font-light">No posts found for "{query}"</p>
-                    </div>
-                  )}
-                </TabsContent>
-
-                <TabsContent value="users">
-                  {users && users.length > 0 ? (
-                    <div className="space-y-2">
-                      {users.map((profile: any) => (
-                        <div key={profile.user_id} className="glass-card rounded-xl p-4 flex items-center justify-between hover:bg-accent/10 transition-colors">
-                          <Link to={`/user/${profile.username}`} className="flex items-center gap-3 flex-1">
-                            <UserAvatar avatarUrl={profile.avatar_url} username={profile.username} size="md" />
-                            <div>
-                              <p className="text-foreground font-normal">{profile.display_name || profile.username}</p>
-                              <p className="text-foreground/40 font-light text-sm">@{profile.username}</p>
-                            </div>
-                          </Link>
-                          {user?.id !== profile.user_id && (
-                            <Button
-                              variant={profile.isFollowing ? "outline" : "default"}
-                              size="sm"
-                              onClick={() => followMutation.mutate({ userId: profile.user_id, isFollowing: profile.isFollowing })}
-                              className="rounded-lg font-light"
-                            >
-                              {profile.isFollowing ? <><UserMinus className="w-4 h-4 mr-1" />Unfollow</> : <><UserPlus className="w-4 h-4 mr-1" />Follow</>}
-                            </Button>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <div className="glass-card rounded-xl p-8 text-center">
-                      <p className="text-foreground/60 font-light">No users found</p>
-                    </div>
-                  )}
-                </TabsContent>
-
-                <TabsContent value="hashtags">
-                  {hashtags && hashtags.length > 0 ? (
-                    <div className="space-y-2">
-                      {hashtags.map((h: any) => (
-                        <button
-                          key={h.id}
-                          onClick={() => { setQuery(`#${h.name}`); setActiveTab('posts'); }}
-                          className="w-full glass-card rounded-xl p-4 text-left hover:bg-accent/10 transition-colors"
-                        >
-                          <div className="flex items-center gap-2">
-                            <Hash className="w-5 h-5 text-foreground/40" />
-                            <span className="text-foreground font-normal">#{h.name}</span>
-                          </div>
-                          <p className="text-foreground/40 text-sm font-light mt-1">{h.post_count} posts</p>
-                        </button>
-                      ))}
-                    </div>
-                  ) : (
-                    <div className="glass-card rounded-xl p-8 text-center">
-                      <p className="text-foreground/60 font-light">No hashtags found</p>
-                    </div>
-                  )}
-                </TabsContent>
-              </>
+            </label>
+            {query && (
+              <div role="tablist" aria-label="results" className="mt-4 flex items-center gap-6 border-b border-foreground/10">
+                {([["posts", "posts"], ["users", "people"], ["hashtags", "tags"]] as const).map(([id, label]) => (
+                  <button key={id} role="tab" aria-selected={activeTab === id} onClick={() => setActiveTab(id)} className="text-tab text-[14px]">
+                    {label}
+                  </button>
+                ))}
+              </div>
             )}
-          </Tabs>
-        )}
-        </div>
-      </div>
+          </>
+        }
+      />
+
+      {!query && (
+        trending && trending.length > 0 ? (
+          <>
+            <p className="px-5 sm:px-8 pt-2 pb-2 text-[12px] font-light text-foreground/40">tags people are using</p>
+            <div className="stagger">
+              {(trending as Tag[]).map((h, idx) => <TagRow key={h.id} h={h} idx={idx} onOpen={openTag} />)}
+            </div>
+          </>
+        ) : (
+          <EmptyState title="type to search." description="results appear as you type. posts first, then people and tags." />
+        )
+      )}
+
+      {query && isLoading && (activeTab === 'posts' ? <FeedSkeleton count={3} /> : <RowSkeleton />)}
+
+      {query && !isLoading && activeTab === 'posts' && (
+        posts && posts.length > 0 ? (
+          <div className="stagger">
+            {posts.map((post, idx) => (
+              <div key={post.id} style={{ "--i": Math.min(idx, 8) } as React.CSSProperties}>
+                <PostCard post={post} likesCount={post.likesCount} commentsCount={post.commentsCount} isLiked={post.isLiked} isBookmarked={post.isBookmarked} />
+              </div>
+            ))}
+          </div>
+        ) : (
+          <EmptyState title="no posts match." description={`nothing contains "${query}". try fewer words, or look under people.`} actionLabel="people" onAction={() => setActiveTab('users')} />
+        )
+      )}
+
+      {query && !isLoading && activeTab === 'users' && (
+        users && users.length > 0 ? (
+          <div className="stagger">
+            {(users as Person[]).map((profile, idx) => (
+              <div key={profile.user_id} className="row px-5 sm:px-8 py-4 flex items-center gap-4" style={{ "--i": Math.min(idx, 8) } as React.CSSProperties}>
+                <Link to={`/user/${profile.username}`} className="flex items-center gap-4 flex-1 min-w-0">
+                  <UserAvatar avatarUrl={profile.avatar_url} username={profile.username} size="md" className="shrink-0" />
+                  <p className="flex items-baseline gap-x-2 text-[14px] font-light leading-none min-w-0">
+                    <span className="text-foreground truncate">{profile.display_name || profile.username}</span>
+                    <span className="text-foreground/40 truncate">@{profile.username}</span>
+                  </p>
+                </Link>
+                {user?.id !== profile.user_id && (
+                  <button
+                    onClick={() => followMutation.mutate({ userId: profile.user_id, isFollowing: !!profile.isFollowing })}
+                    disabled={followMutation.isPending}
+                    aria-pressed={!!profile.isFollowing}
+                    className="quiet text-[13px] h-10 px-2 -mr-2 rounded-md shrink-0 disabled:opacity-50"
+                  >
+                    {profile.isFollowing ? "following" : "follow"}
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
+        ) : (
+          <EmptyState title="no one by that name." description={`nothing matched "${query}". try part of a name, or a handle.`} />
+        )
+      )}
+
+      {query && !isLoading && activeTab === 'hashtags' && (
+        hashtags && hashtags.length > 0 ? (
+          <div className="stagger">
+            {(hashtags as Tag[]).map((h, idx) => <TagRow key={h.id} h={h} idx={idx} onOpen={openTag} />)}
+          </div>
+        ) : (
+          <EmptyState title="no tags match." description={`no tag contains "${query.replace('#', '')}".`} />
+        )
+      )}
     </DashboardLayout>
   );
 };

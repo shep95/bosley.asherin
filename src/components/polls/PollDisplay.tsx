@@ -119,10 +119,7 @@ const PollDisplay = ({ postId }: PollDisplayProps) => {
       className="p-4 rounded-lg border border-border/30 bg-accent/5 space-y-4"
       onClick={(e) => e.stopPropagation()}
     >
-      <div className="flex items-center gap-2">
-        <BarChart3 className="w-4 h-4 text-foreground/60" />
-        <h4 className="font-light text-foreground">{poll.question}</h4>
-      </div>
+      <p className="text-[15px] font-light text-foreground mb-3">{poll.question}</p>
 
       <div className="space-y-2">
         {options.map((option: PollOption) => {
@@ -136,25 +133,23 @@ const PollDisplay = ({ postId }: PollDisplayProps) => {
               key={option.id}
               onClick={() => !isExpired && vote.mutate(option.id)}
               disabled={isExpired || vote.isPending}
-              className={`w-full text-left p-3 rounded-lg border transition-all relative overflow-hidden ${
-                isSelected 
-                  ? 'border-primary bg-primary/10' 
-                  : 'border-border/30 hover:border-border/50'
+              className={`w-full text-left px-3 py-2.5 rounded-md border transition-colors relative overflow-hidden text-[14px] font-light ${
+                isSelected ? 'border-foreground/60' : 'border-foreground/15 hover:border-foreground/35'
               } ${isExpired ? 'opacity-70 cursor-not-allowed' : 'cursor-pointer'}`}
             >
               {showResults && (
                 <div 
-                  className="absolute inset-0 bg-primary/10 transition-all"
+                  className="absolute inset-y-0 left-0 bg-foreground/[0.08] transition-[width] duration-500 ease-soft"
                   style={{ width: `${percentage}%` }}
                 />
               )}
               <div className="relative flex items-center justify-between">
                 <div className="flex items-center gap-2">
-                  {isSelected && <Check className="w-4 h-4 text-primary" />}
-                  <span className="font-light">{option.option_text}</span>
+                  {isSelected && <Check className="w-3.5 h-3.5 text-foreground" />}
+                  <span>{option.option_text}</span>
                 </div>
                 {showResults && (
-                  <div className="flex items-center gap-2 text-sm text-foreground/60">
+                  <div className="flex items-center gap-2 text-[12px] text-foreground/50 tabular-nums">
                     <span>{voteCount}</span>
                     <span>({percentage}%)</span>
                   </div>
@@ -165,14 +160,14 @@ const PollDisplay = ({ postId }: PollDisplayProps) => {
         })}
       </div>
 
-      <div className="flex items-center justify-between text-xs text-foreground/50">
+      <div className="flex items-center justify-between text-[12px] font-light text-foreground/40">
         <span>{totalVotes} vote{totalVotes !== 1 ? 's' : ''}</span>
-        {poll.allows_multiple && <span>Multiple selections allowed</span>}
+        {poll.allows_multiple && <span>pick more than one</span>}
         {poll.ends_at && (
           <span>
             {isExpired 
-              ? 'Poll ended' 
-              : `Ends ${new Date(poll.ends_at).toLocaleDateString()}`
+              ? 'closed'
+              : `closes ${new Date(poll.ends_at).toLocaleDateString()}`
             }
           </span>
         )}

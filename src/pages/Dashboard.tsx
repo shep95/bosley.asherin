@@ -8,7 +8,8 @@ import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { RefreshCw, WifiOff, CloudUpload } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import PageHeader from "@/components/layout/PageHeader";
+import EmptyState from "@/components/ui/empty-state";
 import { isPostAllowedInFeed } from "@/lib/linkUtils";
 import { useOfflineSync } from "@/hooks/useOfflineSync";
 
@@ -160,115 +161,84 @@ const Dashboard = () => {
 
   return (
     <DashboardLayout>
-      <div className="max-w-2xl mx-auto">
-        {/* Sticky glass feed header */}
-        <div className="sticky top-0 z-20 page-header">
-          <div className="px-6 py-4 flex items-center justify-between">
-            <div>
-              <h1 className="text-[1.375rem] font-semibold tracking-[-0.02em] text-foreground">Home</h1>
-              <p className="text-xs text-foreground/60 mt-0.5">
-                Newest posts first — no algorithm deciding for you
+      <PageHeader
+        title="feed"
+        subtitle="newest first. nothing is reordered for you."
+        actions={
+          <button onClick={handleRefresh} disabled={isFetching} aria-label="refresh" className="quiet p-2 rounded-md">
+            <RefreshCw className={`w-4 h-4 ${isFetching ? "animate-spin" : ""}`} />
+          </button>
+        }
+        belowRow={<FeedControls mode={feedMode} onModeChange={setFeedMode} />}
+      />
+
+      {isOffline && (
+        <div className="row px-5 sm:px-8 py-3 flex items-center gap-3 text-[13px] font-light">
+          <WifiOff className="w-4 h-4 text-signal" />
+          <span className="text-foreground/80">offline. posts wait here and send when you are back.</span>
+          {queueCount > 0 && <span className="ml-auto text-signal tabular-nums">{queueCount} waiting</span>}
+        </div>
+      )}
+      {queueCount > 0 && !isOffline && (
+        <div className="row px-5 sm:px-8 py-3 flex items-center gap-3 text-[13px] font-light">
+          <CloudUpload className={`w-4 h-4 text-foreground/60 ${isSyncing ? "animate-pulse" : ""}`} />
+          <span className="text-foreground/80">
+            {isSyncing ? "sending queued posts…" : `${queueCount} post${queueCount > 1 ? "s" : ""} ready to send`}
+          </span>
+          {!isSyncing && (
+            <button onClick={syncQueue} className="ml-auto text-foreground hover:text-signal transition-colors">
+              send now
+            </button>
+          )}
+        </div>
+      )}
+
+      <PostComposer />
+
+      {isLoading ? (
+        <FeedSkeleton count={4} />
+      ) : posts && posts.length > 0 ? (
+        <div className="stagger">
+          {visiblePosts.map((post, idx) => (
+            <div key={post.id} style={{ "--i": Math.min(idx, 8) } as React.CSSProperties}>
+              <PostCard
+                post={post}
+                likesCount={post.likesCount}
+                commentsCount={post.commentsCount}
+                isLiked={post.isLiked}
+                isBookmarked={post.isBookmarked}
+              />
+            </div>
+          ))}
+          {hasMore ? (
+            <div className="px-5 sm:px-8 py-6">
+              <button
+                onClick={() => setVisibleCount((c) => c + 30)}
+                className="text-[14px] text-foreground hover:text-signal transition-colors"
+              >
+                more <span className="text-foreground/40 tabular-nums ml-2">{visiblePosts.length} of {posts.length}</span>
+              </button>
+            </div>
+          ) : (
+            posts.length > 30 && (
+              <p className="px-5 sm:px-8 py-6 text-[13px] font-light text-foreground/40">
+                that is everything. {posts.length} posts.
               </p>
-            </div>
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={handleRefresh}
-              disabled={isFetching}
-              aria-label="Refresh feed"
-              className="rounded-lg h-9 w-9 glass-inset hover:bg-foreground/10 press"
-            >
-              <RefreshCw className={`w-4 h-4 ${isFetching ? 'animate-spin' : ''}`} />
-            </Button>
-          </div>
-          <div className="px-6 pb-4">
-            <FeedControls mode={feedMode} onModeChange={setFeedMode} />
-          </div>
+            )
+          )}
         </div>
-
-        <div className="px-4 py-6">
-        {/* Offline indicator */}
-        {isOffline && (
-          <div className="glass-card rounded-xl p-3 mb-4 flex items-center gap-3 border-signal/30">
-            <WifiOff className="w-5 h-5 text-signal" />
-            <div className="flex-1">
-              <p className="text-foreground text-sm font-medium">You're offline</p>
-              <p className="text-foreground/60 text-xs">Posts will be queued and synced when you're back online</p>
-            </div>
-            {queueCount > 0 && (
-              <span className="text-signal text-sm font-medium tabular-nums">{queueCount} queued</span>
-            )}
-          </div>
-        )}
-
-        {/* Sync indicator */}
-        {queueCount > 0 && !isOffline && (
-          <div className="glass-card rounded-xl p-3 mb-4 flex items-center gap-3 border-sky-500/30">
-            <CloudUpload className={`w-5 h-5 text-sky-400 ${isSyncing ? 'animate-pulse' : ''}`} />
-            <div className="flex-1">
-              <p className="text-foreground text-sm font-medium">
-                {isSyncing ? 'Syncing posts...' : `${queueCount} post${queueCount > 1 ? 's' : ''} ready to sync`}
-              </p>
-            </div>
-            {!isSyncing && (
-              <Button variant="ghost" size="sm" onClick={syncQueue} className="text-sky-400">
-                Sync now
-              </Button>
-            )}
-          </div>
-        )}
-
-        {/* Post composer */}
-        <div className="mb-6">
-          <PostComposer />
-        </div>
-
-        {/* Posts feed */}
-        {isLoading ? (
-          <FeedSkeleton count={4} />
-        ) : posts && posts.length > 0 ? (
-          <div className="space-y-4 stagger">
-            {visiblePosts.map((post, idx) => (
-              <div key={post.id} style={{ "--i": Math.min(idx, 8) } as React.CSSProperties}>
-                <PostCard
-                  post={post}
-                  likesCount={post.likesCount}
-                  commentsCount={post.commentsCount}
-                  isLiked={post.isLiked}
-                  isBookmarked={post.isBookmarked}
-                />
-              </div>
-            ))}
-            {hasMore ? (
-              <div className="flex justify-center pt-2">
-                <Button
-                  onClick={() => setVisibleCount((c) => c + 30)}
-                  variant="glass"
-                  className="rounded-lg font-medium press"
-                >
-                  Load more posts
-                  <span className="ml-2 text-foreground/55 text-xs tabular-nums">
-                    {visiblePosts.length} / {posts.length}
-                  </span>
-                </Button>
-              </div>
-            ) : (
-              posts.length > 30 && (
-                <p className="text-center text-xs text-foreground/50 pt-2">
-                  You're all caught up · {posts.length} posts
-                </p>
-              )
-            )}
-          </div>
-        ) : (
-          <div className="glass-card rounded-xl p-10 text-center">
-            <p className="text-foreground/70">
-              No posts yet. Be the first to speak your mind!
-            </p>
-          </div>
-        )}
-        </div>
-      </div>
+      ) : (
+        <EmptyState
+          title="nothing here yet."
+          description={
+            feedMode === "friends"
+              ? "you are not following anyone yet. the feed fills as you do."
+              : "the room is quiet. write the first thing."
+          }
+          actionLabel={feedMode === "friends" ? "find people" : undefined}
+          actionTo={feedMode === "friends" ? "/explore" : undefined}
+        />
+      )}
     </DashboardLayout>
   );
 };

@@ -7,33 +7,35 @@
 
 @layer base {
   :root {
-    --background: 0 0% 0%;
-    --foreground: 0 0% 100%;
+    /* Layered blacks: background, surface, shadow — different temperatures
+       of the same absence. Cold (hue 222) at very low saturation. */
+    --background: 222 18% 3%;
+    --foreground: 220 14% 96%;
 
-    --card: 0 0% 10.6%;
-    --card-foreground: 0 0% 100%;
+    --card: 222 14% 7%;
+    --card-foreground: 220 14% 96%;
 
-    --popover: 0 0% 10.6%;
-    --popover-foreground: 0 0% 100%;
+    --popover: 222 14% 6%;
+    --popover-foreground: 220 14% 96%;
 
-    --primary: 0 0% 0%;
-    --primary-foreground: 0 0% 100%;
+    --primary: 220 14% 96%;
+    --primary-foreground: 222 18% 4%;
 
-    --secondary: 0 0% 10.6%;
-    --secondary-foreground: 0 0% 100%;
+    --secondary: 222 12% 10%;
+    --secondary-foreground: 220 14% 96%;
 
-    --muted: 0 0% 15%;
-    --muted-foreground: 0 0% 60%;
+    --muted: 222 10% 14%;
+    --muted-foreground: 220 8% 58%;
 
-    --accent: 0 0% 20%;
-    --accent-foreground: 0 0% 100%;
+    --accent: 222 10% 16%;
+    --accent-foreground: 220 14% 96%;
 
-    --destructive: 0 84.2% 60.2%;
+    --destructive: 0 62% 52%;
     --destructive-foreground: 0 0% 100%;
 
-    --border: 0 0% 20%;
-    --input: 0 0% 20%;
-    --ring: 0 0% 100%;
+    --border: 222 10% 16%;
+    --input: 222 10% 16%;
+    --ring: 220 14% 90%;
 
     /* Radius scale — one decision per tier, not one value everywhere.
        controls (buttons, inputs) 6px · surfaces (cards, sheets) 10px · chrome (panels) 16px */
@@ -48,11 +50,11 @@
 
     /* Elevation surfaces — readable scrims that sit over the wallpaper.
        Depth is communicated by opacity + blur, never by hue shifts. */
-    --surface-1: 0 0% 4% / 0.42;
-    --surface-2: 0 0% 4% / 0.58;
-    --surface-3: 0 0% 6% / 0.74;
-    --hairline: 0 0% 100% / 0.07;
-    --hairline-strong: 0 0% 100% / 0.14;
+    --surface-1: 222 16% 4% / 0.55;
+    --surface-2: 222 16% 5% / 0.7;
+    --surface-3: 222 16% 5% / 0.86;
+    --hairline: 220 20% 100% / 0.07;
+    --hairline-strong: 220 20% 100% / 0.14;
 
     /* Signal accent — warm amber, pulled from the wallpaper.
        Warm hues read as approachable; reserved for state, never decoration. */
@@ -71,33 +73,9 @@
   }
 
   .dark {
-    --background: 0 0% 0%;
-    --foreground: 0 0% 100%;
-
-    --card: 0 0% 10.6%;
-    --card-foreground: 0 0% 100%;
-
-    --popover: 0 0% 10.6%;
-    --popover-foreground: 0 0% 100%;
-
-    --primary: 0 0% 0%;
-    --primary-foreground: 0 0% 100%;
-
-    --secondary: 0 0% 10.6%;
-    --secondary-foreground: 0 0% 100%;
-
-    --muted: 0 0% 15%;
-    --muted-foreground: 0 0% 60%;
-
-    --accent: 0 0% 20%;
-    --accent-foreground: 0 0% 100%;
-
-    --destructive: 0 62.8% 30.6%;
-    --destructive-foreground: 0 0% 100%;
-
-    --border: 0 0% 20%;
-    --input: 0 0% 20%;
-    --ring: 0 0% 100%;
+    /* Single theme. Kept so `dark` class consumers resolve to the same values. */
+    --background: 222 18% 3%;
+    --foreground: 220 14% 96%;
   }
 }
 
@@ -168,6 +146,76 @@
     -webkit-backdrop-filter: blur(24px) saturate(120%);
     border-color: hsl(var(--hairline));
   }
+
+  /* The wallpaper, cooled. Warm gold streaks pulled down toward the blacks so
+     type sits on darkness, not on a photograph. One treatment everywhere. */
+  .wallpaper {
+    filter: saturate(0.6) brightness(0.68) contrast(1.05);
+  }
+  .wallpaper-scrim {
+    background:
+      radial-gradient(120% 80% at 70% 0%, hsl(222 18% 3% / 0.2), hsl(222 18% 3% / 0.75) 60%),
+      linear-gradient(to bottom, hsl(222 18% 3% / 0.55), hsl(222 18% 3% / 0.9));
+  }
+
+  /* A room: the reading column. One surface, hairline edges, no box shadows. */
+  .room {
+    background: hsl(var(--surface-2));
+    border-left: 1px solid hsl(var(--hairline));
+    border-right: 1px solid hsl(var(--hairline));
+    backdrop-filter: blur(20px) saturate(110%);
+    -webkit-backdrop-filter: blur(20px) saturate(110%);
+  }
+  /* Rows inside a room are separated by hairlines, never boxed. */
+  .row {
+    border-bottom: 1px solid hsl(var(--hairline));
+    transition: background var(--dur-base) var(--ease-out-soft);
+  }
+  .row:hover {
+    background: hsl(220 20% 100% / 0.025);
+  }
+  /* Quiet action: reads at rest, wakes on hover, never colour-coded. */
+  .quiet {
+    color: hsl(var(--foreground) / 0.45);
+    transition: color var(--dur-fast) var(--ease-out-soft);
+  }
+  .quiet:hover { color: hsl(var(--foreground) / 0.95); }
+  .quiet[aria-pressed="true"], .quiet.is-on { color: hsl(var(--foreground)); }
+  /* Text tabs: an underline moves, nothing else. */
+  .text-tab {
+    position: relative;
+    padding: 0.5rem 0;
+    color: hsl(var(--foreground) / 0.5);
+    font-weight: 300;
+    transition: color var(--dur-fast) var(--ease-out-soft);
+  }
+  .text-tab:hover { color: hsl(var(--foreground) / 0.85); }
+  .text-tab[aria-selected="true"], .text-tab[data-state="active"], .text-tab[aria-pressed="true"] {
+    color: hsl(var(--foreground));
+  }
+  .text-tab::after {
+    content: "";
+    position: absolute;
+    left: 0; right: 0; bottom: -1px;
+    height: 1px;
+    background: hsl(var(--foreground));
+    transform: scaleX(0);
+    transform-origin: left;
+    transition: transform var(--dur-base) var(--ease-out-soft);
+  }
+  .text-tab[aria-selected="true"]::after, .text-tab[data-state="active"]::after, .text-tab[aria-pressed="true"]::after {
+    transform: scaleX(1);
+  }
+  /* Field: a hairline underneath, nothing around. */
+  .field {
+    background: transparent;
+    border: 0;
+    border-bottom: 1px solid hsl(var(--hairline-strong));
+    border-radius: 0;
+    padding: 0.5rem 0;
+    transition: border-color var(--dur-fast) var(--ease-out-soft);
+  }
+  .field:focus, .field:focus-within { outline: none; border-bottom-color: hsl(var(--foreground) / 0.8); }
 
   /* Inset controls: composers, inputs, segmented tracks. */
   .glass-inset {

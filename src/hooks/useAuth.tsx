@@ -10,8 +10,9 @@ interface AuthContextType {
   session: Session | null;
   loading: boolean;
   mfaRequired: boolean;
-  signUp: (email: string, password: string, username: string, captchaToken?: string) => Promise<{ error: string | null }>;
-  signIn: (email: string, password: string, captchaToken?: string) => Promise<{ error: string | null; mfaRequired?: boolean }>;
+  signUp: (email: string, password: string, username: string, captchaToken?: string) => Promise<{ error: string | null; needsConfirmation?: boolean }>;
+  signIn: (email: string, password: string, captchaToken?: string) => Promise<{ error: string | null; mfaRequired?: boolean; unconfirmed?: boolean }>;
+  resendConfirmation: (email: string) => Promise<void>;
   signOut: () => Promise<void>;
   clearMfaRequired: () => Promise<boolean>;
   resetPassword: (email: string) => Promise<{ error: string | null }>;
@@ -79,7 +80,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     password: string,
     username: string,
     captchaToken?: string
-  ): Promise<{ error: string | null }> => {
+  ): Promise<{ error: string | null; needsConfirmation?: boolean }> => {
     try {
       // Sanitize inputs before any backend call
       const cleanEmail = sanitizeEmail(email);
@@ -123,7 +124,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         email: cleanEmail,
         password,
         options: {
-          emailRedirectTo: window.location.origin,
+          emailRedirectTo: window.location.origin + '/dashboard',
           data: { username: cleanUsername },
           // Only forwarded when Turnstile is configured; GoTrue verifies it
           // server-side when Bot and Abuse Protection is enabled.
@@ -153,6 +154,14 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         }
       }
 
+      // No session back from sign-up means the project requires email
+      // confirmation (or the address already exists — Supabase returns a
+      // placeholder user in that case so nothing leaks). Either way the next
+      // step is the inbox, not the dashboard.
+      if (data.user && !data.session) {
+        return { error: null, needsConfirmation: true };
+      }
+
       return { error: null };
     } catch (err) {
       return { error: 'An unexpected error occurred' };
@@ -163,7 +172,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     email: string,
     password: string,
     captchaToken?: string
-  ): Promise<{ error: string | null; mfaRequired?: boolean }> => {
+  ): Promise<{ error: string | null; mfaRequired?: boolean; unconfirmed?: boolean }> => {
     try {
       const cleanEmail = sanitizeEmail(email);
 
@@ -180,6 +189,11 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       });
 
       if (error) {
+        // "Email not confirmed" is not a wrong password and must not be
+        // reported as one — that is how people lock themselves out.
+        if (/not confirmed/i.test(error.message)) {
+          return { error: null, unconfirmed: true };
+        }
         // Record failed attempt
         await recordLoginAttempt(cleanEmail, false);
         // Generic error message - never leak whether email exists
@@ -267,6 +281,18 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
    * session has genuinely been upgraded to aal2 by a successful TOTP verify.
    * Resolves to the new `mfaRequired` value.
    */
+  const resendConfirmation = async (email: string) => {
+    try {
+      await supabase.auth.resend({
+        type: 'signup',
+        email: sanitizeEmail(email),
+        options: { emailRedirectTo: window.location.origin + '/dashboard' },
+      });
+    } catch {
+      /* neutral: the UI always says "sent if that account exists" */
+    }
+  };
+
   const clearMfaRequired = useCallback(async (): Promise<boolean> => {
     const required = await checkMfaRequired();
     setMfaRequired(required);
@@ -275,7 +301,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
   return (
     <AuthContext.Provider
-      value={{ user, session, loading, mfaRequired, signUp, signIn, signOut, clearMfaRequired, resetPassword, updatePassword }}
+      value={{ user, session, loading, mfaRequired, signUp, signIn, signOut, resendConfirmation, clearMfaRequired, resetPassword, updatePassword }}
     >
       {children}
     </AuthContext.Provider>

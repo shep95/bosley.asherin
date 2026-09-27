@@ -5,8 +5,12 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
-import { Plus, Trash2, Loader2, Layers } from "lucide-react";
+import { Loader2 } from "lucide-react";
 
+/**
+ * Saved feed set-ups. Rendered as rows inside the settings document: one row
+ * carries the name and the form, then one row per saved profile.
+ */
 const FeedProfilesManager = () => {
   const { user } = useAuth();
   const { toast } = useToast();
@@ -31,15 +35,15 @@ const FeedProfilesManager = () => {
     mutationFn: async () => {
       if (!user) throw new Error("Not authenticated");
       if (!newName.trim()) throw new Error("Name required");
-      
+
       const configPresets: Record<string, Record<string, string | null>> = {
         "Friends Only": { mode: "friends", sort: "chronological", timeWindow: "" },
         "News Sources": { mode: "chronological", sort: "chronological", timeWindow: "24h" },
         "Trending": { mode: "interest", sort: "engagement", timeWindow: "" },
       };
-      
+
       const config = configPresets[newName.trim()] || { mode: "chronological", sort: "chronological", timeWindow: "" };
-      
+
       const { error } = await supabase.from('feed_profiles').insert([{
         user_id: user.id,
         name: newName.trim(),
@@ -50,7 +54,7 @@ const FeedProfilesManager = () => {
     onSuccess: () => {
       setNewName("");
       queryClient.invalidateQueries({ queryKey: ['feed-profiles'] });
-      toast({ title: "Feed profile created" });
+      toast({ title: "feed saved" });
     }
   });
 
@@ -64,57 +68,63 @@ const FeedProfilesManager = () => {
     }
   });
 
+  const canSave = !!newName.trim() && !createProfile.isPending;
+
   return (
-    <div className="space-y-4">
-      <div className="flex gap-2">
-        <Input
-          value={newName}
-          onChange={(e) => setNewName(e.target.value)}
-          placeholder="Profile name (e.g. Friends Only, News)"
-          className="glass-panel border rounded-lg font-light flex-1"
-        />
-        <Button
-          onClick={() => createProfile.mutate()}
-          disabled={!newName.trim() || createProfile.isPending}
-          size="icon"
-          className="rounded-lg bg-foreground text-background hover:bg-foreground/90 shrink-0"
+    <>
+      <div className="row px-5 sm:px-8 py-4">
+        <p className="text-[15px] font-light text-foreground">saved feeds</p>
+        <p className="mt-0.5 text-[13px] font-light text-foreground/50">
+          keep a few set-ups and switch between them. try "Friends Only" or "News Sources".
+        </p>
+        <form
+          className="mt-3 flex items-end gap-4"
+          onSubmit={(e) => { e.preventDefault(); if (canSave) createProfile.mutate(); }}
         >
-          {createProfile.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
-        </Button>
+          <Input
+            value={newName}
+            onChange={(e) => setNewName(e.target.value)}
+            placeholder="name this feed"
+            aria-label="feed name"
+            className="flex-1 h-9"
+            maxLength={40}
+          />
+          <Button type="submit" variant="signal" size="sm" disabled={!canSave} className="shrink-0">
+            {createProfile.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : "save"}
+          </Button>
+        </form>
       </div>
 
       {isLoading ? (
-        <div className="flex justify-center py-4">
-          <Loader2 className="w-5 h-5 animate-spin text-foreground/40" />
+        <div className="row px-5 sm:px-8 py-4" aria-hidden>
+          <div className="h-3.5 w-1/3 rounded bg-foreground/[0.06] animate-pulse" />
         </div>
       ) : profiles && profiles.length > 0 ? (
-        <div className="space-y-2">
-          {profiles.map((p: any) => (
-            <div key={p.id} className="flex items-center gap-3 py-2.5 px-3 rounded-lg bg-accent/5 border border-border/10">
-              <Layers className="w-4 h-4 text-foreground/40 shrink-0" />
+        <div className="stagger">
+          {profiles.map((p: any, i: number) => (
+            <div
+              key={p.id}
+              style={{ "--i": Math.min(i, 8) } as React.CSSProperties}
+              className="row px-5 sm:px-8 py-3 flex items-center gap-4"
+            >
               <div className="flex-1 min-w-0">
-                <p className="text-sm font-light text-foreground/70">{p.name}</p>
-                <p className="text-xs text-foreground/30 font-light capitalize">
+                <p className="text-[14px] font-light text-foreground truncate">{p.name}</p>
+                <p className="text-[12px] font-light text-foreground/40">
                   {(p.config as any)?.mode || 'chronological'} · {(p.config as any)?.timeWindow || 'all time'}
                 </p>
               </div>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-8 w-8 text-destructive/60 hover:text-destructive shrink-0"
+              <button
+                type="button"
                 onClick={() => deleteProfile.mutate(p.id)}
+                className="quiet h-10 px-2 rounded-md text-[13px] shrink-0"
               >
-                <Trash2 className="w-3.5 h-3.5" />
-              </Button>
+                remove
+              </button>
             </div>
           ))}
         </div>
-      ) : (
-        <p className="text-foreground/30 text-sm font-light text-center py-3">
-          No saved feed profiles yet. Try "Friends Only" or "News Sources".
-        </p>
-      )}
-    </div>
+      ) : null}
+    </>
   );
 };
 

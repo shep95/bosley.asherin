@@ -1,19 +1,25 @@
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
-import { Textarea } from "@/components/ui/textarea";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
 import { useMutation } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
-import { HelpCircle, Send, Loader2 } from "lucide-react";
+import { Loader2 } from "lucide-react";
 
 interface AskQuestionFormProps {
   recipientUserId: string;
   recipientUsername: string;
 }
 
+const QUESTION_MAX = 500;
+
+/**
+ * One line that opens when you touch it. The only accent on this tab is the
+ * "ask" button, and it stays dim until there is something to send.
+ */
 const AskQuestionForm = ({ recipientUserId, recipientUsername }: AskQuestionFormProps) => {
   const [question, setQuestion] = useState("");
+  const [focused, setFocused] = useState(false);
   const { user } = useAuth();
   const { toast } = useToast();
 
@@ -21,69 +27,68 @@ const AskQuestionForm = ({ recipientUserId, recipientUsername }: AskQuestionForm
     mutationFn: async () => {
       if (!user) throw new Error("Not authenticated");
       if (!question.trim()) throw new Error("Question is empty");
-      
+
       const { error } = await supabase
         .from('anonymous_questions')
         .insert({
           recipient_user_id: recipientUserId,
           question_text: question.trim()
         });
-      
+
       if (error) throw error;
     },
     onSuccess: () => {
       setQuestion("");
-      toast({ 
-        title: "Question sent!", 
-        description: `Your anonymous question was sent to @${recipientUsername}` 
+      toast({
+        title: "question sent",
+        description: `@${recipientUsername} will not see who asked.`
       });
     },
-    onError: (error) => {
-      toast({ 
-        title: "Error", 
-        description: error.message, 
-        variant: "destructive" 
+    onError: () => {
+      toast({
+        title: "could not send",
+        description: "check your connection and try again.",
+        variant: "destructive"
       });
     }
   });
 
   if (!user || user.id === recipientUserId) return null;
 
+  const open = focused || question.length > 0;
+  const canSend = question.trim().length > 0 && !submitQuestion.isPending;
+
   return (
-    <div className="glass-card rounded-xl p-4 space-y-3">
-      <div className="flex items-center gap-2 text-foreground/70">
-        <HelpCircle className="w-4 h-4" />
-        <span className="text-sm font-light">Ask anonymously</span>
-      </div>
-      
-      <Textarea
+    <div className="row px-5 sm:px-8 py-4">
+      <label className="sr-only" htmlFor="ask-question">ask a question</label>
+      <textarea
+        id="ask-question"
         value={question}
         onChange={(e) => setQuestion(e.target.value)}
-        placeholder={`Ask @${recipientUsername} anything...`}
-        className="bg-background/50 border-border/50 rounded-lg font-light resize-none min-h-[80px]"
-        maxLength={500}
+        onFocus={() => setFocused(true)}
+        onBlur={() => setFocused(false)}
+        placeholder={`ask @${recipientUsername} anything. they will not see who asked.`}
+        maxLength={QUESTION_MAX}
+        rows={open ? 3 : 1}
+        className="field w-full text-[15px] font-light leading-relaxed text-foreground placeholder:text-foreground/30 resize-none transition-[height] duration-200 ease-soft"
       />
-      
-      <div className="flex items-center justify-between">
-        <span className="text-xs text-foreground/40">
-          {question.length}/500 • Your identity is hidden
-        </span>
-        <Button
-          onClick={() => submitQuestion.mutate()}
-          disabled={!question.trim() || submitQuestion.isPending}
-          size="sm"
-          className="rounded-lg bg-foreground text-background"
-        >
-          {submitQuestion.isPending ? (
-            <Loader2 className="w-4 h-4 animate-spin" />
-          ) : (
-            <>
-              <Send className="w-4 h-4 mr-1" />
-              Send
-            </>
-          )}
-        </Button>
-      </div>
+      {open && (
+        <div className="mt-3 flex items-center gap-3">
+          <Button
+            variant="signal"
+            size="sm"
+            onClick={() => submitQuestion.mutate()}
+            disabled={!canSend}
+          >
+            {submitQuestion.isPending && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+            ask
+          </Button>
+          <span className="text-[12px] font-light text-foreground/40">anonymous.</span>
+          <span className="ml-auto text-[12px] font-light text-foreground/35 tabular-nums">
+            {question.length}/{QUESTION_MAX}
+          </span>
+        </div>
+      )}
     </div>
   );
 };

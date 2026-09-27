@@ -1,41 +1,52 @@
-import { Button } from "@/components/ui/button";
+import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
+import { Button } from "@/components/ui/button";
 
 interface GlassHeaderProps {
   onOpenAuth?: (tab: "login" | "signup") => void;
 }
 
+/**
+ * The header is a line, not a bar: a wordmark and two words. It only gains
+ * a surface once content scrolls underneath it.
+ */
 const GlassHeader = ({ onOpenAuth }: GlassHeaderProps) => {
   const navigate = useNavigate();
+  const [scrolled, setScrolled] = useState(false);
+
+  useEffect(() => {
+    const onScroll = () => setScrolled(window.scrollY > 24);
+    onScroll();
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => window.removeEventListener("scroll", onScroll);
+  }, []);
+
   const openAuth = (tab: "login" | "signup") => {
     if (onOpenAuth) onOpenAuth(tab);
     else navigate("/", { state: { openAuth: tab } });
   };
 
   return (
-    <header className="fixed top-0 left-0 right-0 z-50 px-4 sm:px-6 py-4 animate-fade-up">
-      <div className="max-w-6xl mx-auto flex items-center justify-between">
-        <Link to="/" className="press">
-          <div className="glass rounded-2xl px-4 py-3 flex items-center">
-            <span className="text-foreground font-light text-lg tracking-wide">Bosley</span>
-          </div>
+    <header
+      className={`fixed top-0 left-0 right-0 z-50 transition-colors duration-300 ease-soft ${
+        scrolled ? "bg-background/70 backdrop-blur-md border-b border-foreground/10" : "border-b border-transparent"
+      }`}
+    >
+      <div className="max-w-6xl mx-auto px-5 sm:px-8 h-14 flex items-center justify-between">
+        <Link to="/" className="text-foreground font-light text-[17px] tracking-[-0.01em]">
+          Bosley
         </Link>
-
-        <div className="glass rounded-2xl px-3 sm:px-4 py-2 flex items-center gap-2 sm:gap-3">
-          <Button
-            variant="ghost"
+        <nav className="flex items-center gap-1 sm:gap-2">
+          <button
             onClick={() => openAuth("login")}
-            className="text-foreground/70 hover:text-foreground hover:bg-foreground/5 text-sm font-light h-9 px-3 sm:px-4 rounded-xl"
+            className="quiet h-9 px-3 rounded-md text-[14px] font-light"
           >
             sign in
-          </Button>
-          <Button
-            onClick={() => openAuth("signup")}
-            className="bg-foreground text-background hover:bg-foreground/90 text-sm font-medium h-9 px-4 sm:px-5 rounded-xl shadow-lg shadow-foreground/10"
-          >
+          </button>
+          <Button variant="signal" size="sm" onClick={() => openAuth("signup")} className="rounded-md h-9 px-4 text-[14px] font-medium">
             get started
           </Button>
-        </div>
+        </nav>
       </div>
     </header>
   );

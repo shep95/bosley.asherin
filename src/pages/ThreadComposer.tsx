@@ -4,10 +4,12 @@ import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
-import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
-import { Plus, Trash2, Loader2, GitBranch, Send } from "lucide-react";
+import { Loader2, X } from "lucide-react";
 import { useNavigate } from "react-router-dom";
+import PageHeader from "@/components/layout/PageHeader";
+
+const MAX = 500;
 
 const ThreadComposer = () => {
   const { user } = useAuth();
@@ -15,6 +17,7 @@ const ThreadComposer = () => {
   const qc = useQueryClient();
   const navigate = useNavigate();
   const [posts, setPosts] = useState<string[]>(["", ""]);
+  const [touched, setTouched] = useState(false);
 
   const updatePost = (idx: number, val: string) => {
     setPosts(p => p.map((x, i) => i === idx ? val : x));
@@ -57,55 +60,60 @@ const ThreadComposer = () => {
     },
     onSuccess: (head) => {
       qc.invalidateQueries({ queryKey: ['posts'] });
-      toast({ title: "Thread published", description: `${posts.filter(p => p.trim()).length} posts in your thread.` });
+      toast({ title: "thread posted", description: `${posts.filter(p => p.trim()).length} posts, in order.` });
       navigate(`/post/${head.id}`);
     },
-    onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" })
+    onError: (e: Error) => toast({ title: "could not post the thread", description: e.message, variant: "destructive" })
   });
+
+  const filledCount = posts.filter(p => p.trim()).length;
+  const tooLong = posts.some(p => p.length > MAX);
+  const valid = filledCount >= 2 && !tooLong;
+  const hint = tooLong ? `each post fits in ${MAX} characters.` : filledCount < 2 ? "a thread is at least two posts." : null;
 
   return (
     <DashboardLayout>
-      <div className="max-w-2xl mx-auto px-4 py-6">
-        <div className="flex items-center gap-2 mb-6">
-          <GitBranch className="w-6 h-6 text-foreground/80" />
-          <h1 className="text-2xl font-light text-foreground">Thread Composer</h1>
-        </div>
+      <PageHeader
+        title="thread"
+        subtitle="several posts, one line of thought. they go out together."
+      />
 
-        <div className="space-y-3">
-          {posts.map((p, idx) => (
-            <div key={idx} className="glass-card rounded-xl p-4 relative">
-              <div className="absolute -left-3 top-6 w-6 h-6 rounded-full bg-foreground/10 border border-foreground/20 flex items-center justify-center text-xs font-medium">
-                {idx + 1}
-              </div>
-              <Textarea
+      <div className="stagger">
+        {posts.map((p, idx) => (
+          <div key={idx} className="row px-5 sm:px-8 py-5 flex items-start gap-4" style={{ "--i": Math.min(idx, 8) } as React.CSSProperties}>
+            <span className="w-6 shrink-0 pt-1 text-[12px] font-light tabular-nums text-foreground/30 text-right">{idx + 1}</span>
+            <div className="flex-1 min-w-0">
+              <textarea
                 value={p}
                 onChange={(e) => updatePost(idx, e.target.value)}
-                placeholder={idx === 0 ? "Start your thread..." : "Continue the thread..."}
-                className="bg-transparent border-none resize-none min-h-[80px] focus-visible:ring-0 p-0"
-                maxLength={500}
+                onBlur={() => setTouched(true)}
+                placeholder={idx === 0 ? "start here." : "and then."}
+                rows={3}
+                maxLength={MAX}
+                aria-label={`post ${idx + 1}`}
+                className="w-full bg-transparent resize-none text-[15.5px] font-light leading-[1.65] text-foreground placeholder:text-foreground/35 focus:outline-none"
               />
-              <div className="flex items-center justify-between mt-2">
-                <span className={`text-xs font-light ${p.length > 480 ? 'text-destructive' : 'text-foreground/40'}`}>
-                  {p.length}/500
-                </span>
+              <div className="mt-1 flex items-center justify-between text-[12px] font-light tabular-nums">
+                <span className={p.length > MAX - 20 ? "text-foreground/80" : "text-foreground/30"}>{p.length > 0 ? `${p.length} / ${MAX}` : ""}</span>
                 {posts.length > 2 && (
-                  <Button variant="ghost" size="sm" onClick={() => removePost(idx)} className="text-foreground/40 hover:text-destructive">
-                    <Trash2 className="w-4 h-4" />
-                  </Button>
+                  <button onClick={() => removePost(idx)} aria-label={`remove post ${idx + 1}`} className="quiet p-2 -mr-2 rounded-md">
+                    <X className="w-3.5 h-3.5" />
+                  </button>
                 )}
               </div>
             </div>
-          ))}
-        </div>
+          </div>
+        ))}
+      </div>
 
-        <div className="flex gap-2 mt-4">
-          <Button variant="outline" onClick={addPost} className="flex-1">
-            <Plus className="w-4 h-4 mr-1" /> Add post
-          </Button>
-          <Button onClick={() => publish.mutate()} disabled={publish.isPending} className="flex-1">
-            {publish.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <><Send className="w-4 h-4 mr-1" /> Publish thread</>}
-          </Button>
+      <div className="px-5 sm:px-8 py-5 flex items-center justify-between gap-4">
+        <div className="min-w-0">
+          <button onClick={addPost} className="quiet text-[13px] h-10 px-2 -ml-2 rounded-md">add another</button>
+          {touched && hint && <p className="mt-1 text-[12px] font-light text-foreground/50">{hint}</p>}
         </div>
+        <Button variant="signal" onClick={() => publish.mutate()} disabled={!valid || publish.isPending}>
+          {publish.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : "post thread"}
+        </Button>
       </div>
     </DashboardLayout>
   );

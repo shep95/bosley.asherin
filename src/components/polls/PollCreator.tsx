@@ -81,30 +81,31 @@ const PollCreator = ({ onPollChange, poll }: PollCreatorProps) => {
         variant="ghost"
         size="sm"
         onClick={handleToggle}
-        className={`gap-2 ${isExpanded ? 'text-primary' : 'text-foreground/60 hover:text-foreground'}`}
+        aria-pressed={isExpanded}
+        className="quiet gap-1.5 h-8 px-2 text-[13px] font-light -ml-2"
       >
-        <BarChart3 className="w-5 h-5" />
-        {isExpanded ? 'Remove Poll' : 'Add Poll'}
+        <BarChart3 className="w-[15px] h-[15px]" />
+        {isExpanded ? 'remove poll' : 'poll'}
       </Button>
 
       {isExpanded && (
-        <div className="p-4 rounded-lg border border-border/30 bg-accent/5 space-y-4">
+        <div className="mt-2 pl-4 border-l border-foreground/15 space-y-3">
           <Input
             value={question}
             onChange={(e) => updatePoll(e.target.value, options)}
-            placeholder="Ask a question..."
-            className="bg-background/50 border-border/50 rounded-lg font-light"
+            placeholder="ask a question."
+            className="field text-[15px]"
           />
 
           <div className="space-y-2">
             {options.map((option, index) => (
               <div key={index} className="flex items-center gap-2">
-                <span className="text-foreground/40 text-sm w-6">{index + 1}.</span>
+                <span className="text-foreground/30 text-[12px] tabular-nums w-5">{String(index + 1).padStart(2, "0")}</span>
                 <Input
                   value={option}
                   onChange={(e) => updateOption(index, e.target.value)}
-                  placeholder={`Option ${index + 1}`}
-                  className="bg-background/50 border-border/50 rounded-lg font-light flex-1"
+                  placeholder={`option ${index + 1}`}
+                  className="field flex-1 text-[14px]"
                 />
                 {options.length > 2 && (
                   <Button
@@ -112,7 +113,7 @@ const PollCreator = ({ onPollChange, poll }: PollCreatorProps) => {
                     variant="ghost"
                     size="sm"
                     onClick={() => removeOption(index)}
-                    className="text-foreground/40 hover:text-destructive p-1 h-8 w-8"
+                    className="quiet p-1 h-8 w-8"
                   >
                     <X className="w-4 h-4" />
                   </Button>
@@ -127,13 +128,13 @@ const PollCreator = ({ onPollChange, poll }: PollCreatorProps) => {
               variant="ghost"
               size="sm"
               onClick={addOption}
-              className="text-foreground/60 hover:text-foreground"
+              className="quiet -ml-2 text-[13px] font-light"
             >
-              <Plus className="w-4 h-4 mr-1" /> Add option
+              <Plus className="w-3.5 h-3.5 mr-1" /> add option
             </Button>
           )}
 
-          <div className="flex items-center justify-between pt-2 border-t border-border/20">
+          <div className="flex items-center justify-between pt-3 border-t border-foreground/10">
             <div className="flex items-center gap-2">
               <Switch
                 checked={allowsMultiple}
@@ -149,7 +150,7 @@ const PollCreator = ({ onPollChange, poll }: PollCreatorProps) => {
                   }
                 }}
               />
-              <Label className="text-sm font-light text-foreground/70">Allow multiple selections</Label>
+              <Label className="text-[13px] font-light text-foreground/60">more than one answer</Label>
             </div>
 
             <select
@@ -165,12 +166,12 @@ const PollCreator = ({ onPollChange, poll }: PollCreatorProps) => {
                   });
                 }
               }}
-              className="bg-background/50 border border-border/50 rounded-lg px-3 py-1.5 text-sm font-light"
+              className="bg-transparent border-0 border-b border-foreground/20 px-1 py-1 text-[13px] font-light text-foreground/70 focus:outline-none"
             >
-              <option value="1d">1 day</option>
-              <option value="3d">3 days</option>
-              <option value="7d">7 days</option>
-              <option value="none">No limit</option>
+              <option value="1d">closes in a day</option>
+              <option value="3d">closes in 3 days</option>
+              <option value="7d">closes in a week</option>
+              <option value="none">stays open</option>
             </select>
           </div>
         </div>

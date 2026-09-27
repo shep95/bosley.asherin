@@ -1,17 +1,16 @@
-import { useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { ReactNode, useRef, useState } from "react";
+import { Link, useNavigate } from "react-router-dom";
 import DashboardLayout from "@/components/layout/DashboardLayout";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
 import { stripMetadata } from "@/lib/mediaSanitize";
 import { validateUpload, extensionForMime, ALLOWED_IMAGE_TYPES, MAX_FILE_SIZES } from "@/lib/sanitize";
+import { useStorageUrl } from "@/lib/storageUrl";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
-import { Label } from "@/components/ui/label";
-import { Loader2, Bell, Eye, Image, X, MessageSquare, Palette, Users, Download, EyeOff, Smartphone, ShieldCheck, ScrollText, Ban, Filter, Layers, Trash2 } from "lucide-react";
 import { Input } from "@/components/ui/input";
-import Brandmark from "@/components/Brandmark";
+import { Loader2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useNotifications } from "@/hooks/useNotifications";
 import AudienceCirclesManager from "@/components/privacy/AudienceCirclesManager";
@@ -22,6 +21,124 @@ import KeywordFiltersManager from "@/components/privacy/KeywordFiltersManager";
 import FeedProfilesManager from "@/components/feed/FeedProfilesManager";
 import { MFAEnrollModal } from "@/components/auth/MFAModals";
 import PageHeader from "@/components/layout/PageHeader";
+
+/* ------------------------------------------------------------------ */
+/* Document furniture: an index, sections, one setting per row.        */
+/* ------------------------------------------------------------------ */
+
+const SECTIONS = [
+  { id: "account", label: "account" },
+  { id: "appearance", label: "appearance" },
+  { id: "feed", label: "feed" },
+  { id: "notifications", label: "notifications" },
+  { id: "messaging", label: "messaging" },
+  { id: "privacy", label: "privacy" },
+  { id: "security", label: "security" },
+  { id: "data", label: "data" },
+] as const;
+
+const Section = ({ id, label, children }: { id: string; label: string; children: ReactNode }) => (
+  <section id={id} aria-labelledby={`${id}-label`} className="scroll-mt-14 lg:scroll-mt-4">
+    <p
+      id={`${id}-label`}
+      className="px-5 sm:px-8 pt-10 pb-2 text-[11px] font-light uppercase tracking-[0.24em] text-foreground/35"
+    >
+      {label}
+    </p>
+    {children}
+  </section>
+);
+
+const SettingRow = ({
+  name,
+  hint,
+  control,
+  htmlFor,
+}: {
+  name: ReactNode;
+  hint?: ReactNode;
+  control?: ReactNode;
+  htmlFor?: string;
+}) => (
+  <div className="row px-5 sm:px-8 py-4 flex items-center justify-between gap-5">
+    <div className="min-w-0 flex-1">
+      {htmlFor ? (
+        <label htmlFor={htmlFor} className="block text-[15px] font-light text-foreground cursor-pointer">
+          {name}
+        </label>
+      ) : (
+        <p className="text-[15px] font-light text-foreground">{name}</p>
+      )}
+      {hint && <p className="mt-0.5 text-[13px] font-light text-foreground/50 leading-relaxed">{hint}</p>}
+    </div>
+    {control && <div className="shrink-0 flex items-center gap-2 min-h-[40px]">{control}</div>}
+  </div>
+);
+
+/** A 56px preview with a quiet change/remove pair. */
+const ImageRow = ({
+  name,
+  hint,
+  bucketValue,
+  onChange,
+  onRemove,
+  inputRef,
+  onFile,
+}: {
+  name: string;
+  hint: string;
+  bucketValue: string | null | undefined;
+  onChange: () => void;
+  onRemove: () => void;
+  inputRef: React.RefObject<HTMLInputElement>;
+  onFile: (f: File) => void;
+}) => {
+  const src = useStorageUrl("backgrounds", bucketValue ?? null);
+  return (
+    <div className="row px-5 sm:px-8 py-4 flex items-center gap-4">
+      <div className="w-14 h-14 rounded-md overflow-hidden bg-foreground/[0.06] shrink-0">
+        {src ? <img src={src} alt="" className="w-full h-full object-cover" /> : null}
+      </div>
+      <div className="min-w-0 flex-1">
+        <p className="text-[15px] font-light text-foreground">{name}</p>
+        <p className="mt-0.5 text-[13px] font-light text-foreground/50">{hint}</p>
+      </div>
+      <input
+        ref={inputRef}
+        type="file"
+        accept="image/jpeg,image/png,image/gif,image/webp"
+        onChange={(e) => e.target.files?.[0] && onFile(e.target.files[0])}
+        className="hidden"
+      />
+      <div className="shrink-0 flex items-center gap-1 text-[14px]">
+        <button type="button" onClick={onChange} className="quiet h-10 px-2 rounded-md">
+          {bucketValue ? "change" : "add"}
+        </button>
+        {bucketValue && (
+          <button type="button" onClick={onRemove} className="quiet h-10 px-2 rounded-md">
+            remove
+          </button>
+        )}
+      </div>
+    </div>
+  );
+};
+
+const SkeletonRows = ({ count = 8 }: { count?: number }) => (
+  <div aria-hidden>
+    {Array.from({ length: count }).map((_, i) => (
+      <div key={i} className="row px-5 sm:px-8 py-5 flex items-center justify-between gap-6">
+        <div className="flex-1 space-y-2">
+          <div className="h-3.5 w-1/3 rounded bg-foreground/[0.06] animate-pulse" />
+          <div className="h-3 w-2/3 rounded bg-foreground/[0.06] animate-pulse" />
+        </div>
+        <div className="h-6 w-11 rounded-full bg-foreground/[0.06] animate-pulse" />
+      </div>
+    ))}
+  </div>
+);
+
+/* ------------------------------------------------------------------ */
 
 const Settings = () => {
   const { user, signOut } = useAuth();
@@ -51,12 +168,12 @@ const Settings = () => {
   const handleUnenrollMFA = async () => {
     const totpFactor = mfaFactors?.totp?.find(f => f.status === 'verified');
     if (!totpFactor) return;
-    
+
     const { error } = await supabase.auth.mfa.unenroll({ factorId: totpFactor.id });
     if (error) {
-      toast({ title: "Error", description: error.message, variant: "destructive" });
+      toast({ title: "could not turn off two-factor", description: error.message, variant: "destructive" });
     } else {
-      toast({ title: "MFA Disabled", description: "Two-factor authentication has been removed." });
+      toast({ title: "two-factor is off" });
       queryClient.invalidateQueries({ queryKey: ['mfa-factors'] });
     }
   };
@@ -70,7 +187,7 @@ const Settings = () => {
         .select('*')
         .eq('user_id', user.id)
         .maybeSingle();
-      
+
       if (!data) {
         // Create default settings
         const { data: newSettings } = await supabase
@@ -110,7 +227,7 @@ const Settings = () => {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['user-settings'] });
-      toast({ title: "Settings saved" });
+      toast({ title: "saved" });
     }
   });
 
@@ -119,53 +236,53 @@ const Settings = () => {
 
     const validationError = await validateUpload(file, ALLOWED_IMAGE_TYPES, MAX_FILE_SIZES.background);
     if (validationError) {
-      toast({ title: "Invalid file", description: validationError, variant: "destructive" });
+      toast({ title: "that file will not work", description: validationError, variant: "destructive" });
       return;
     }
 
     const fileExt = extensionForMime(file.type);
     if (!fileExt) {
-      toast({ title: "Invalid file", description: "That file type is not supported.", variant: "destructive" });
+      toast({ title: "that file will not work", description: "use a jpeg, png, gif or webp.", variant: "destructive" });
       return;
     }
 
     const clean = await stripMetadata(file);
     const fileName = `${user.id}/background-${Date.now()}.${fileExt}`;
-    
+
     const { error: uploadError } = await supabase.storage
       .from('backgrounds')
       .upload(fileName, clean);
-    
+
     if (uploadError) {
-      toast({ title: "Upload failed", variant: "destructive" });
+      toast({ title: "upload failed. try again.", variant: "destructive" });
       return;
     }
-    
+
     const { data: { publicUrl } } = supabase.storage
       .from('backgrounds')
       .getPublicUrl(fileName);
-    
+
     await supabase
       .from('profiles')
       .update({ custom_background_url: publicUrl })
       .eq('user_id', user.id);
-    
+
     queryClient.invalidateQueries({ queryKey: ['profile-settings'] });
     queryClient.invalidateQueries({ queryKey: ['profile-background'] });
-    toast({ title: "Background updated" });
+    toast({ title: "background updated" });
   };
 
   const removeBackground = async () => {
     if (!user) return;
-    
+
     await supabase
       .from('profiles')
       .update({ custom_background_url: null })
       .eq('user_id', user.id);
-    
+
     queryClient.invalidateQueries({ queryKey: ['profile-settings'] });
     queryClient.invalidateQueries({ queryKey: ['profile-background'] });
-    toast({ title: "Background removed" });
+    toast({ title: "background removed" });
   };
 
   const uploadMessageWallpaper = async (file: File) => {
@@ -173,64 +290,64 @@ const Settings = () => {
 
     const validationError = await validateUpload(file, ALLOWED_IMAGE_TYPES, MAX_FILE_SIZES.background);
     if (validationError) {
-      toast({ title: "Invalid file", description: validationError, variant: "destructive" });
+      toast({ title: "that file will not work", description: validationError, variant: "destructive" });
       return;
     }
 
     const fileExt = extensionForMime(file.type);
     if (!fileExt) {
-      toast({ title: "Invalid file", description: "That file type is not supported.", variant: "destructive" });
+      toast({ title: "that file will not work", description: "use a jpeg, png, gif or webp.", variant: "destructive" });
       return;
     }
 
     const clean = await stripMetadata(file);
     const fileName = `${user.id}/message-wallpaper-${Date.now()}.${fileExt}`;
-    
+
     const { error: uploadError } = await supabase.storage
       .from('backgrounds')
       .upload(fileName, clean);
-    
+
     if (uploadError) {
-      toast({ title: "Upload failed", variant: "destructive" });
+      toast({ title: "upload failed. try again.", variant: "destructive" });
       return;
     }
-    
+
     const { data: { publicUrl } } = supabase.storage
       .from('backgrounds')
       .getPublicUrl(fileName);
-    
+
     await supabase
       .from('profiles')
       .update({ message_wallpaper_url: publicUrl })
       .eq('user_id', user.id);
-    
+
     queryClient.invalidateQueries({ queryKey: ['profile-settings'] });
     queryClient.invalidateQueries({ queryKey: ['profile-wallpaper'] });
-    toast({ title: "Message wallpaper updated" });
+    toast({ title: "message wallpaper updated" });
   };
 
   const removeMessageWallpaper = async () => {
     if (!user) return;
-    
+
     await supabase
       .from('profiles')
       .update({ message_wallpaper_url: null })
       .eq('user_id', user.id);
-    
+
     queryClient.invalidateQueries({ queryKey: ['profile-settings'] });
     queryClient.invalidateQueries({ queryKey: ['profile-wallpaper'] });
-    toast({ title: "Message wallpaper removed" });
+    toast({ title: "message wallpaper removed" });
   };
 
   const handleEnableNotifications = async () => {
     const granted = await requestPermission();
     if (granted) {
-      toast({ title: "Notifications enabled" });
+      toast({ title: "browser notifications are on" });
     } else {
-      toast({ 
-        title: "Permission denied", 
-        description: "Please enable notifications in your browser settings",
-        variant: "destructive" 
+      toast({
+        title: "the browser said no",
+        description: "allow notifications for this site in your browser settings, then try again.",
+        variant: "destructive"
       });
     }
   };
@@ -248,9 +365,9 @@ const Settings = () => {
           },
         }
       );
-      
+
       if (!response.ok) throw new Error('Export failed');
-      
+
       const blob = await response.blob();
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
@@ -260,13 +377,13 @@ const Settings = () => {
       a.click();
       document.body.removeChild(a);
       window.URL.revokeObjectURL(url);
-      
-      toast({ title: "Data exported successfully" });
+
+      toast({ title: "your export is downloading" });
     } catch (error) {
-      toast({ 
-        title: "Export failed", 
-        description: "Please try again later",
-        variant: "destructive" 
+      toast({
+        title: "export failed",
+        description: "try again in a moment.",
+        variant: "destructive"
       });
     } finally {
       setIsExporting(false);
@@ -291,509 +408,400 @@ const Settings = () => {
       navigate("/", { replace: true });
     } catch {
       toast({
-        title: "Couldn't delete account",
-        description: "Please try again in a moment.",
+        title: "could not delete the account",
+        description: "try again in a moment.",
         variant: "destructive",
       });
       setIsDeleting(false);
     }
   };
 
-  if (isLoading) {
-    return (
-      <DashboardLayout>
-        <div className="flex items-center justify-center py-12">
-          <Loader2 className="w-8 h-8 animate-spin text-foreground/60" />
-        </div>
-      </DashboardLayout>
-    );
-  }
+  const jumpTo = (id: string) => (e: React.MouseEvent<HTMLAnchorElement>) => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    e.preventDefault();
+    el.scrollIntoView({ behavior: "smooth", block: "start" });
+    history.replaceState(null, "", `#${id}`);
+  };
+
+  const index = (
+    <nav
+      aria-label="sections"
+      className="-mx-5 sm:-mx-8 px-5 sm:px-8 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden [mask-image:linear-gradient(to_right,black_calc(100%-40px),transparent)] sm:[mask-image:none]"
+    >
+      <ul className="flex items-center gap-x-5 text-[14px] font-light whitespace-nowrap">
+        {SECTIONS.map((s) => (
+          <li key={s.id}>
+            <a
+              href={`#${s.id}`}
+              onClick={jumpTo(s.id)}
+              className="inline-block py-2 text-foreground/50 hover:text-foreground transition-colors duration-150 ease-soft"
+            >
+              {s.label}
+            </a>
+          </li>
+        ))}
+      </ul>
+    </nav>
+  );
+
+  const browserHint =
+    notificationPermission === 'granted'
+      ? 'on. you get an alert for new messages.'
+      : notificationPermission === 'denied'
+        ? 'blocked by the browser. allow it in site settings.'
+        : 'ask the browser to show alerts for new messages.';
 
   return (
     <DashboardLayout>
       <PageHeader
-        title="Settings"
-        statusDot="bg-emerald-500"
-        statusLabel="Your account, privacy and security"
+        title="settings"
+        subtitle="your account, what you see, who sees you."
+        belowRow={index}
       />
-      <div className="max-w-2xl mx-auto px-4 py-6">
-        <div className="space-y-6">
-          {/* Custom Background */}
-          <div className="glass-card rounded-xl p-6">
-            <div className="flex items-center gap-2 mb-4">
-              <Image className="w-5 h-5 text-foreground/60" />
-              <h2 className="text-lg font-light text-foreground">Custom Background</h2>
-            </div>
-            
-            <div className="space-y-4">
-              {profile?.custom_background_url ? (
-                <div className="relative rounded-lg overflow-hidden">
-                  <img 
-                    src={profile.custom_background_url} 
-                    alt="Custom background" 
-                    className="w-full h-32 object-cover"
-                  />
-                  <button
-                    onClick={removeBackground}
-                    className="absolute top-2 right-2 glass-inset rounded-full p-1.5"
-                  >
-                    <X className="w-4 h-4" />
-                  </button>
-              </div>
-              ) : (
-                <div className="border-2 border-dashed border-border/30 rounded-lg p-6 text-center">
-                  <p className="text-foreground/50 font-light text-sm mb-3">
-                    No custom background set
-                  </p>
-              </div>
-              )}
-              <input
-                ref={backgroundInputRef}
-                type="file"
-                accept="image/jpeg,image/png,image/gif,image/webp"
-                onChange={(e) => e.target.files?.[0] && uploadBackground(e.target.files[0])}
-                className="hidden"
-              />
-              <Button
-                onClick={() => backgroundInputRef.current?.click()}
-                variant="outline"
-                className="w-full rounded-lg font-light"
-              >
-                <Image className="w-4 h-4 mr-2" />
-                {profile?.custom_background_url ? 'Change Background' : 'Upload Background'}
-              </Button>
-            </div>
-          </div>
 
-          {/* Message Wallpaper */}
-          <div className="glass-card rounded-xl p-6">
-            <div className="flex items-center gap-2 mb-4">
-              <Palette className="w-5 h-5 text-foreground/60" />
-              <h2 className="text-lg font-light text-foreground">Message Wallpaper</h2>
-            </div>
-            
-            <div className="space-y-4">
-              {profile?.message_wallpaper_url ? (
-                <div className="relative rounded-lg overflow-hidden">
-                  <img 
-                    src={profile.message_wallpaper_url} 
-                    alt="Message wallpaper" 
-                    className="w-full h-32 object-cover"
-                  />
-                  <button
-                    onClick={removeMessageWallpaper}
-                    className="absolute top-2 right-2 glass-inset rounded-full p-1.5"
-                  >
-                    <X className="w-4 h-4" />
-                  </button>
-              </div>
-              ) : (
-                <div className="border-2 border-dashed border-border/30 rounded-lg p-6 text-center">
-                  <p className="text-foreground/50 font-light text-sm mb-3">
-                    No message wallpaper set
-                  </p>
-              </div>
-              )}
-              <input
-                ref={wallpaperInputRef}
-                type="file"
-                accept="image/jpeg,image/png,image/gif,image/webp"
-                onChange={(e) => e.target.files?.[0] && uploadMessageWallpaper(e.target.files[0])}
-                className="hidden"
-              />
-              <Button
-                onClick={() => wallpaperInputRef.current?.click()}
-                variant="outline"
-                className="w-full rounded-lg font-light"
-              >
-                <Palette className="w-4 h-4 mr-2" />
-                {profile?.message_wallpaper_url ? 'Change Wallpaper' : 'Upload Wallpaper'}
-              </Button>
-              <p className="text-foreground/40 text-xs font-light">
-                This wallpaper will appear as the background in your message conversations.
-              </p>
-            </div>
-          </div>
+      {isLoading ? (
+        <SkeletonRows />
+      ) : (
+        <div className="pb-16">
+          {/* account */}
+          <Section id="account" label="account">
+            <SettingRow
+              name={profile?.username ? `@${profile.username}` : "your profile"}
+              hint="name, bio, avatar and links live on your profile."
+              control={
+                <Link to="/profile" className="quiet h-10 px-2 inline-flex items-center rounded-md text-[14px]">
+                  edit profile
+                </Link>
+              }
+            />
+            <SettingRow
+              name="email"
+              hint={<span className="break-all">{user?.email ?? "—"}</span>}
+            />
+            <SettingRow
+              name="this device"
+              hint="signed in here. leaving only ends this session."
+              control={
+                <button
+                  type="button"
+                  onClick={async () => { await signOut(); navigate("/"); }}
+                  className="quiet h-10 px-2 rounded-md text-[14px]"
+                >
+                  sign out
+                </button>
+              }
+            />
+          </Section>
 
-          {/* Content Preferences */}
-          <div className="glass-card rounded-xl p-6">
-            <div className="flex items-center gap-2 mb-4">
-              <Eye className="w-5 h-5 text-foreground/60" />
-              <h2 className="text-lg font-light text-foreground">Content Preferences</h2>
-            </div>
-            
-            <div className="space-y-4">
-              <div className="flex items-center justify-between">
-                <Label className="font-light">Show political content</Label>
+          {/* appearance */}
+          <Section id="appearance" label="appearance">
+            <ImageRow
+              name="background"
+              hint="behind every room. yours only."
+              bucketValue={profile?.custom_background_url}
+              inputRef={backgroundInputRef}
+              onFile={uploadBackground}
+              onChange={() => backgroundInputRef.current?.click()}
+              onRemove={removeBackground}
+            />
+            <ImageRow
+              name="message wallpaper"
+              hint="behind your conversations."
+              bucketValue={profile?.message_wallpaper_url}
+              inputRef={wallpaperInputRef}
+              onFile={uploadMessageWallpaper}
+              onChange={() => wallpaperInputRef.current?.click()}
+              onRemove={removeMessageWallpaper}
+            />
+          </Section>
+
+          {/* feed */}
+          <Section id="feed" label="feed">
+            <SettingRow
+              htmlFor="s-politics"
+              name="political posts"
+              hint="show them in latest and for you."
+              control={
                 <Switch
+                  id="s-politics"
                   checked={settings?.show_politics ?? true}
                   onCheckedChange={(checked) => updateSettings.mutate({ show_politics: checked })}
                 />
-              </div>
-              <div className="flex items-center justify-between">
-                <Label className="font-light">Show viral posts</Label>
+              }
+            />
+            <SettingRow
+              htmlFor="s-viral"
+              name="viral posts"
+              hint="show posts that are travelling fast."
+              control={
                 <Switch
+                  id="s-viral"
                   checked={settings?.show_viral ?? true}
                   onCheckedChange={(checked) => updateSettings.mutate({ show_viral: checked })}
                 />
-              </div>
-              <div className="flex items-center justify-between">
-                <Label className="font-light">Hide insults</Label>
+              }
+            />
+            <SettingRow
+              htmlFor="s-insults"
+              name="hide insults"
+              hint="posts that mostly attack someone stay out."
+              control={
                 <Switch
+                  id="s-insults"
                   checked={settings?.hide_insults ?? false}
                   onCheckedChange={(checked) => updateSettings.mutate({ hide_insults: checked })}
                 />
-              </div>
-              <div className="flex items-center justify-between">
-                <Label className="font-light">Hide political arguments</Label>
+              }
+            />
+            <SettingRow
+              htmlFor="s-arguments"
+              name="hide political arguments"
+              hint="long back-and-forth threads stay out."
+              control={
                 <Switch
+                  id="s-arguments"
                   checked={settings?.hide_political_arguments ?? false}
                   onCheckedChange={(checked) => updateSettings.mutate({ hide_political_arguments: checked })}
                 />
-              </div>
-            </div>
-          </div>
+              }
+            />
+            <FeedProfilesManager />
+          </Section>
 
-          {/* Notifications */}
-          <div className="glass-card rounded-xl p-6">
-            <div className="flex items-center gap-2 mb-4">
-              <Bell className="w-5 h-5 text-foreground/60" />
-              <h2 className="text-lg font-light text-foreground">Notifications</h2>
-            </div>
-            
-            <div className="space-y-4">
-              <div className="flex items-center justify-between">
-                <Label className="font-light">Enable notifications</Label>
+          {/* notifications */}
+          <Section id="notifications" label="notifications">
+            <SettingRow
+              htmlFor="s-notifs"
+              name="notifications"
+              hint="likes, replies, follows and mentions."
+              control={
                 <Switch
+                  id="s-notifs"
                   checked={settings?.notifications_enabled ?? true}
                   onCheckedChange={(checked) => updateSettings.mutate({ notifications_enabled: checked })}
                 />
-              </div>
-              
-              <div className="flex items-center justify-between">
-                <div>
-                  <Label className="font-light">Browser notifications</Label>
-                  <p className="text-foreground/50 text-xs font-light mt-0.5">
-                    {notificationPermission === 'granted' 
-                      ? 'Enabled - you will receive alerts for new messages'
-                      : notificationPermission === 'denied'
-                        ? 'Blocked - enable in browser settings'
-                        : 'Click to enable push notifications'
-                    }
-                  </p>
-                </div>
-                {notificationPermission !== 'granted' && notificationPermission !== 'denied' && (
-                  <Button
-                    onClick={handleEnableNotifications}
-                    size="sm"
-                    variant="outline"
-                    className="rounded-lg font-light"
-                  >
-                    Enable
-                  </Button>
-                )}
-                {notificationPermission === 'granted' && (
-                  <span className="text-green-500 text-sm font-light">Enabled</span>
-                )}
-              </div>
-            </div>
-          </div>
+              }
+            />
+            <SettingRow
+              name="browser alerts"
+              hint={browserHint}
+              control={
+                notificationPermission === 'granted' ? (
+                  <span className="text-[13px] font-light text-foreground/50">on</span>
+                ) : notificationPermission === 'denied' ? (
+                  <span className="text-[13px] font-light text-foreground/50">blocked</span>
+                ) : (
+                  <button type="button" onClick={handleEnableNotifications} className="quiet h-10 px-2 rounded-md text-[14px]">
+                    turn on
+                  </button>
+                )
+              }
+            />
+          </Section>
 
-          {/* Messaging */}
-          <div className="glass-card rounded-xl p-6">
-            <div className="flex items-center gap-2 mb-4">
-              <MessageSquare className="w-5 h-5 text-foreground/60" />
-              <h2 className="text-lg font-light text-foreground">Messaging</h2>
-            </div>
-            
-            <div className="space-y-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <Label className="font-light">Allow message requests</Label>
-                  <p className="text-foreground/50 text-xs font-light mt-0.5">
-                    When disabled, only people you follow can message you
-                  </p>
-                </div>
+          {/* messaging */}
+          <Section id="messaging" label="messaging">
+            <SettingRow
+              htmlFor="s-requests"
+              name="message requests"
+              hint="off means only people you follow can message you."
+              control={
                 <Switch
+                  id="s-requests"
                   checked={settings?.message_requests_enabled ?? true}
                   onCheckedChange={(checked) => updateSettings.mutate({ message_requests_enabled: checked })}
                 />
-              </div>
-            </div>
-          </div>
-
-          {/* Privacy */}
-          <div className="glass-card rounded-xl p-6">
-            <div className="flex items-center gap-2 mb-4">
-              <Brandmark className="w-5 h-5 opacity-60" />
-              <h2 className="text-lg font-light text-foreground">Privacy & Security</h2>
-            </div>
-            
-            <div className="space-y-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <Label className="font-light flex items-center gap-2">
-                    <EyeOff className="w-4 h-4" /> Stealth Mode
-                  </Label>
-                  <p className="text-foreground/50 text-xs font-light mt-0.5">
-                    Browse profiles without appearing in their view history
-                  </p>
-                </div>
+              }
+            />
+            <SettingRow
+              htmlFor="s-receipts"
+              name="read receipts"
+              hint="others see when you have read them."
+              control={
                 <Switch
+                  id="s-receipts"
+                  checked={settings?.read_receipts_enabled ?? true}
+                  onCheckedChange={(checked) => updateSettings.mutate({ read_receipts_enabled: checked })}
+                />
+              }
+            />
+          </Section>
+
+          {/* privacy */}
+          <Section id="privacy" label="privacy">
+            <SettingRow
+              htmlFor="s-stealth"
+              name="stealth"
+              hint="browse profiles without appearing in their viewers."
+              control={
+                <Switch
+                  id="s-stealth"
                   checked={settings?.stealth_mode ?? false}
                   onCheckedChange={(checked) => updateSettings.mutate({ stealth_mode: checked })}
                 />
-              </div>
-              
-              {/* Privacy Controls */}
-              <div className="pt-3 border-t border-border/20 space-y-3">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <Label className="font-light">Read receipts</Label>
-                    <p className="text-foreground/50 text-xs font-light mt-0.5">
-                      Show when you've read messages
-                    </p>
-                  </div>
-                  <Switch
-                    checked={settings?.read_receipts_enabled ?? true}
-                    onCheckedChange={(checked) => updateSettings.mutate({ read_receipts_enabled: checked })}
-                  />
-                </div>
-                <div className="flex items-center justify-between">
-                  <div>
-                    <Label className="font-light">Last seen</Label>
-                    <p className="text-foreground/50 text-xs font-light mt-0.5">
-                      Show when you were last active
-                    </p>
-                  </div>
-                  <Switch
-                    checked={settings?.last_seen_visible ?? true}
-                    onCheckedChange={(checked) => updateSettings.mutate({ last_seen_visible: checked })}
-                  />
-                </div>
-                <div className="flex items-center justify-between">
-                  <div>
-                    <Label className="font-light">Online status</Label>
-                    <p className="text-foreground/50 text-xs font-light mt-0.5">
-                      Show when you're currently online
-                    </p>
-                  </div>
-                  <Switch
-                    checked={settings?.online_status_visible ?? true}
-                    onCheckedChange={(checked) => updateSettings.mutate({ online_status_visible: checked })}
-                  />
-                </div>
-              </div>
-
-              {/* MFA Section */}
-              <div className="pt-3 border-t border-border/20">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <Label className="font-light flex items-center gap-2">
-                      <Smartphone className="w-4 h-4" /> Two-Factor Authentication
-                    </Label>
-                    <p className="text-foreground/50 text-xs font-light mt-0.5">
-                      {hasMFA 
-                        ? 'Your account is protected with TOTP authentication' 
-                        : 'Add an extra layer of security with an authenticator app'}
-                    </p>
-                  </div>
-                  {hasMFA ? (
-                    <div className="flex items-center gap-2">
-                      <ShieldCheck className="w-4 h-4 text-green-500" />
-                      <Button
-                        onClick={handleUnenrollMFA}
-                        size="sm"
-                        variant="outline"
-                        className="rounded-lg font-light text-destructive border-destructive/30"
-                      >
-                        Disable
-                      </Button>
-                    </div>
-                  ) : (
-                    <Button
-                      onClick={() => setShowMFAEnroll(true)}
-                      size="sm"
-                      variant="outline"
-                      className="rounded-lg font-light"
-                    >
-                      Enable MFA
-                    </Button>
-                  )}
-                </div>
-              </div>
-              
-              <p className="text-foreground/60 font-light text-sm pt-2 border-t border-border/20">
-                Your data is protected in transit with HTTPS and access is restricted by row-level security.
-              </p>
-            </div>
-          </div>
-
-          {/* Audience Circles */}
-          <div className="glass-card rounded-xl p-6">
-            <div className="flex items-center gap-2 mb-4">
-              <Users className="w-5 h-5 text-foreground/60" />
-              <h2 className="text-lg font-light text-foreground">Audience Circles</h2>
-            </div>
-            <p className="text-foreground/50 font-light text-sm mb-4">
-              Create groups to control who can see your posts
-            </p>
-            <AudienceCirclesManager />
-          </div>
-
-          {/* Advanced Blocking */}
-          <div className="glass-card rounded-xl p-6">
-            <div className="flex items-center gap-2 mb-4">
-              <Ban className="w-5 h-5 text-foreground/60" />
-              <h2 className="text-lg font-light text-foreground">Advanced Blocking</h2>
-            </div>
-            <p className="text-foreground/50 font-light text-sm mb-4">
-              Pattern-based blocking rules to filter out bots, spam, and unwanted accounts
-            </p>
-            <BlockRulesManager />
-          </div>
-
-          {/* Keyword Filters */}
-          <div className="glass-card rounded-xl p-6">
-            <div className="flex items-center gap-2 mb-4">
-              <Filter className="w-5 h-5 text-foreground/60" />
-              <h2 className="text-lg font-light text-foreground">Keyword Filters</h2>
-            </div>
-            <p className="text-foreground/50 font-light text-sm mb-4">
-              Hide posts containing specific words or patterns (supports regex)
-            </p>
-            <KeywordFiltersManager />
-          </div>
-
-          {/* Feed Profiles */}
-          <div className="glass-card rounded-xl p-6">
-            <div className="flex items-center gap-2 mb-4">
-              <Layers className="w-5 h-5 text-foreground/60" />
-              <h2 className="text-lg font-light text-foreground">Feed Profiles</h2>
-            </div>
-            <p className="text-foreground/50 font-light text-sm mb-4">
-              Save multiple timeline configurations for different contexts
-            </p>
-            <FeedProfilesManager />
-          </div>
-
-          {/* Profile Viewers */}
-          <div className="glass-card rounded-xl p-6">
-            <ProfileViewers />
-          </div>
-
-          {/* Data Export */}
-          <div className="glass-card rounded-xl p-6">
-            <div className="flex items-center gap-2 mb-4">
-              <Download className="w-5 h-5 text-foreground/60" />
-              <h2 className="text-lg font-light text-foreground">Your Data</h2>
-            </div>
-            <p className="text-foreground/50 font-light text-sm mb-4">
-              Download all your data including posts, comments, likes, and settings
-            </p>
-            <Button
-              onClick={handleExportData}
-              disabled={isExporting}
-              variant="outline"
-              className="w-full rounded-lg font-light"
-            >
-              {isExporting ? (
-                <>
-                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                  Exporting...
-                </>
-              ) : (
-                <>
-                  <Download className="w-4 h-4 mr-2" />
-                  Export My Data
-                </>
-              )}
-            </Button>
-          </div>
-
-          {/* Activity Log */}
-          <div className="glass-card rounded-xl p-6">
-            <div className="flex items-center gap-2 mb-4">
-              <ScrollText className="w-5 h-5 text-foreground/60" />
-              <h2 className="text-lg font-light text-foreground">Activity Log</h2>
-            </div>
-            <p className="text-foreground/50 font-light text-sm mb-4">
-              View a record of security-relevant actions on your account
-            </p>
-            <AuditLogViewer />
-          </div>
-
-          {/* Delete Account — quiet by design; the confirmation does the shouting */}
-          <div className="glass-card rounded-xl p-6">
-            <div className="flex items-center gap-2 mb-2">
-              <Trash2 className="w-5 h-5 text-foreground/60" />
-              <h2 className="text-lg font-light text-foreground">Delete Account</h2>
-            </div>
-            <p className="text-foreground/50 font-light text-sm mb-4">
-              Permanently removes your profile, posts, messages, media and settings. This cannot be undone.
-              Export your data first if you want a copy.
-            </p>
-
-            {!showDeleteConfirm ? (
-              <button
-                type="button"
-                onClick={() => setShowDeleteConfirm(true)}
-                className="text-sm font-light text-destructive/80 hover:text-destructive transition-colors"
-              >
-                delete my account
-              </button>
-            ) : (
-              <div className="space-y-3 pt-3 border-t border-border/20">
-                <Label htmlFor="delete-confirm" className="font-light text-foreground/80">
-                  Type your username{profile?.username ? <> <span className="text-foreground">{profile.username}</span></> : null} to confirm
-                </Label>
-                <Input
-                  id="delete-confirm"
-                  value={deleteConfirmText}
-                  onChange={(e) => setDeleteConfirmText(e.target.value)}
-                  placeholder={profile?.username ?? "your_username"}
-                  className="bg-background/50 border-border/50 rounded-lg font-light"
-                  autoComplete="off"
-                  autoFocus
-                  maxLength={30}
+              }
+            />
+            <SettingRow
+              htmlFor="s-lastseen"
+              name="last seen"
+              hint="show when you were last here."
+              control={
+                <Switch
+                  id="s-lastseen"
+                  checked={settings?.last_seen_visible ?? true}
+                  onCheckedChange={(checked) => updateSettings.mutate({ last_seen_visible: checked })}
                 />
-                <div className="flex items-center gap-3">
-                  <Button
-                    onClick={handleDeleteAccount}
-                    disabled={!deleteMatches || isDeleting}
-                    variant="outline"
-                    size="sm"
-                    className="rounded-lg font-light text-destructive border-destructive/30 hover:bg-destructive/10 hover:text-destructive"
-                  >
-                    {isDeleting ? (
-                      <>
-                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                        deleting...
-                      </>
-                    ) : (
-                      "delete everything"
-                    )}
-                  </Button>
+              }
+            />
+            <SettingRow
+              htmlFor="s-online"
+              name="online now"
+              hint="show a dot while you are here."
+              control={
+                <Switch
+                  id="s-online"
+                  checked={settings?.online_status_visible ?? true}
+                  onCheckedChange={(checked) => updateSettings.mutate({ online_status_visible: checked })}
+                />
+              }
+            />
+            <AudienceCirclesManager />
+            <BlockRulesManager />
+            <KeywordFiltersManager />
+            <div className="row px-5 sm:px-8 py-4">
+              <ProfileViewers />
+            </div>
+          </Section>
+
+          {/* security */}
+          <Section id="security" label="security">
+            <SettingRow
+              name="two-factor"
+              hint={hasMFA ? "on. a code from your authenticator app is needed to sign in." : "ask for a code from an authenticator app at sign in."}
+              control={
+                hasMFA ? (
+                  <button type="button" onClick={handleUnenrollMFA} className="quiet h-10 px-2 rounded-md text-[14px]">
+                    turn off
+                  </button>
+                ) : (
                   <button
                     type="button"
-                    onClick={() => { setShowDeleteConfirm(false); setDeleteConfirmText(""); }}
-                    disabled={isDeleting}
-                    className="text-sm font-light text-foreground/50 hover:text-foreground transition-colors"
+                    onClick={() => setShowMFAEnroll(true)}
+                    className="h-10 px-2 rounded-md text-[14px] font-light text-foreground/80 hover:text-foreground transition-colors"
                   >
-                    cancel
+                    turn on
                   </button>
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
+                )
+              }
+            />
+            <SettingRow
+              name="sessions"
+              hint="you are signed out after 15 minutes idle. sign out under account to end this device now."
+            />
+            <SettingRow name="activity" hint="sign-ins, password changes and other security events on this account." />
+            <AuditLogViewer />
+          </Section>
 
-        <MFAEnrollModal
-          open={showMFAEnroll}
-          onOpenChange={setShowMFAEnroll}
-          onEnrolled={() => queryClient.invalidateQueries({ queryKey: ['mfa-factors'] })}
-        />
-      </div>
+          {/* data */}
+          <Section id="data" label="data">
+            <SettingRow
+              name="export everything"
+              hint="posts, replies, likes, messages and settings as one json file."
+              control={
+                <button
+                  type="button"
+                  onClick={handleExportData}
+                  disabled={isExporting}
+                  aria-busy={isExporting}
+                  className="quiet h-10 px-2 rounded-md text-[14px] inline-flex items-center gap-2 disabled:opacity-100"
+                >
+                  {isExporting ? (
+                    <>
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      preparing…
+                    </>
+                  ) : (
+                    "export"
+                  )}
+                </button>
+              }
+            />
+            <div className="row px-5 sm:px-8 py-4">
+              <div className="flex items-center justify-between gap-5">
+                <div className="min-w-0 flex-1">
+                  <p className="text-[15px] font-light text-foreground">delete account</p>
+                  <p className="mt-0.5 text-[13px] font-light text-foreground/50 leading-relaxed">
+                    removes your profile, posts, messages, media and settings. this cannot be undone. export first if you want a copy.
+                  </p>
+                </div>
+                {!showDeleteConfirm && (
+                  <button
+                    type="button"
+                    onClick={() => setShowDeleteConfirm(true)}
+                    className="shrink-0 h-10 px-2 rounded-md text-[14px] font-light text-destructive/80 hover:text-destructive transition-colors"
+                  >
+                    delete
+                  </button>
+                )}
+              </div>
+
+              {showDeleteConfirm && (
+                <form
+                  className="mt-4 max-w-sm"
+                  onSubmit={(e) => { e.preventDefault(); handleDeleteAccount(); }}
+                >
+                  <label htmlFor="delete-confirm" className="block text-[13px] font-light text-foreground/60">
+                    type <span className="text-foreground">{profile?.username ?? "your username"}</span> to confirm
+                  </label>
+                  <Input
+                    id="delete-confirm"
+                    value={deleteConfirmText}
+                    onChange={(e) => setDeleteConfirmText(e.target.value)}
+                    placeholder={profile?.username ?? "your_username"}
+                    autoComplete="off"
+                    autoFocus
+                    maxLength={30}
+                    className="mt-1"
+                  />
+                  <div className="mt-4 flex items-center gap-4">
+                    <Button
+                      type="submit"
+                      variant="destructive"
+                      size="sm"
+                      disabled={!deleteMatches || isDeleting}
+                      className="px-0 hover:bg-transparent"
+                    >
+                      {isDeleting ? (
+                        <>
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                          deleting…
+                        </>
+                      ) : (
+                        "delete everything"
+                      )}
+                    </Button>
+                    <button
+                      type="button"
+                      onClick={() => { setShowDeleteConfirm(false); setDeleteConfirmText(""); }}
+                      disabled={isDeleting}
+                      className="quiet text-[14px] h-8 px-1 rounded-md"
+                    >
+                      cancel
+                    </button>
+                  </div>
+                </form>
+              )}
+            </div>
+          </Section>
+        </div>
+      )}
+
+      <MFAEnrollModal
+        open={showMFAEnroll}
+        onOpenChange={setShowMFAEnroll}
+        onEnrolled={() => queryClient.invalidateQueries({ queryKey: ['mfa-factors'] })}
+      />
     </DashboardLayout>
   );
 };

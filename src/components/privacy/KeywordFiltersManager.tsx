@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/hooks/use-toast";
-import { Plus, Trash2, Filter, Loader2 } from "lucide-react";
+import { Loader2 } from "lucide-react";
 import {
   Select,
   SelectContent,
@@ -15,6 +15,14 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 
+const SCOPES: Record<string, string> = {
+  all: "everywhere",
+  timeline: "timeline",
+  replies: "replies",
+  notifications: "notifications",
+};
+
+/** Words and patterns to hide. Rows inside the settings document. */
 const KeywordFiltersManager = () => {
   const { user } = useAuth();
   const { toast } = useToast();
@@ -49,7 +57,7 @@ const KeywordFiltersManager = () => {
     onSuccess: () => {
       setNewPattern("");
       queryClient.invalidateQueries({ queryKey: ['keyword-filters'] });
-      toast({ title: "Filter added" });
+      toast({ title: "filter added" });
     }
   });
 
@@ -71,70 +79,78 @@ const KeywordFiltersManager = () => {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['keyword-filters'] })
   });
 
+  const canAdd = !!newPattern.trim() && !addFilter.isPending;
+
   return (
-    <div className="space-y-4">
-      <div className="flex gap-2">
-        <Input
-          value={newPattern}
-          onChange={(e) => setNewPattern(e.target.value)}
-          placeholder="Keyword or pattern (e.g. crypto|NFT|drop)"
-          className="glass-panel border rounded-lg font-light flex-1"
-        />
-        <Select value={scope} onValueChange={setScope}>
-          <SelectTrigger className="glass-panel border rounded-lg font-light w-28">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent className="glass-panel border">
-            <SelectItem value="all">All</SelectItem>
-            <SelectItem value="timeline">Timeline</SelectItem>
-            <SelectItem value="replies">Replies</SelectItem>
-            <SelectItem value="notifications">Notifs</SelectItem>
-          </SelectContent>
-        </Select>
-        <Button
-          onClick={() => addFilter.mutate()}
-          disabled={!newPattern.trim() || addFilter.isPending}
-          size="icon"
-          className="rounded-lg bg-foreground text-background hover:bg-foreground/90 shrink-0"
+    <>
+      <div className="row px-5 sm:px-8 py-4">
+        <p className="text-[15px] font-light text-foreground">keyword filters</p>
+        <p className="mt-0.5 text-[13px] font-light text-foreground/50">
+          hide posts that contain a word or a pattern. regex works: crypto|nft|drop
+        </p>
+        <form
+          className="mt-3 flex flex-col sm:flex-row sm:items-end gap-3 sm:gap-4"
+          onSubmit={(e) => { e.preventDefault(); if (canAdd) addFilter.mutate(); }}
         >
-          {addFilter.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
-        </Button>
+          <Input
+            value={newPattern}
+            onChange={(e) => setNewPattern(e.target.value)}
+            placeholder="word or pattern"
+            aria-label="word or pattern"
+            className="w-full sm:flex-1 sm:min-w-0 h-9"
+            maxLength={200}
+          />
+          <div className="flex items-end gap-3 sm:gap-4 sm:contents">
+            <Select value={scope} onValueChange={setScope}>
+              <SelectTrigger className="h-9 flex-1 sm:flex-none sm:w-[140px] text-[14px]" aria-label="where">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {Object.entries(SCOPES).map(([k, label]) => (
+                  <SelectItem key={k} value={k}>{label}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Button type="submit" variant="signal" size="sm" disabled={!canAdd} className="shrink-0">
+              {addFilter.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : "add"}
+            </Button>
+          </div>
+        </form>
       </div>
 
       {isLoading ? (
-        <div className="flex justify-center py-4">
-          <Loader2 className="w-5 h-5 animate-spin text-foreground/40" />
+        <div className="row px-5 sm:px-8 py-4" aria-hidden>
+          <div className="h-3.5 w-1/3 rounded bg-foreground/[0.06] animate-pulse" />
         </div>
       ) : filters && filters.length > 0 ? (
-        <div className="space-y-2">
-          {filters.map((f: any) => (
-            <div key={f.id} className="flex items-center gap-3 py-2.5 px-3 rounded-lg bg-accent/5 border border-border/10">
-              <Filter className="w-4 h-4 text-foreground/40 shrink-0" />
+        <div className="stagger">
+          {filters.map((f: any, i: number) => (
+            <div
+              key={f.id}
+              style={{ "--i": Math.min(i, 8) } as React.CSSProperties}
+              className="row px-5 sm:px-8 py-3 flex items-center gap-4"
+            >
               <div className="flex-1 min-w-0">
-                <p className="text-sm font-light text-foreground/70 truncate font-mono">{f.pattern}</p>
-                <p className="text-xs text-foreground/30 font-light capitalize">{f.scope}</p>
+                <p className="text-[14px] font-light text-foreground truncate font-mono">{f.pattern ?? f.keyword}</p>
+                <p className="text-[12px] font-light text-foreground/40">{SCOPES[f.scope] ?? f.scope ?? "everywhere"}</p>
               </div>
               <Switch
+                aria-label={`filter ${f.pattern ?? f.keyword} on`}
                 checked={f.is_active}
                 onCheckedChange={(checked) => toggleFilter.mutate({ id: f.id, active: checked })}
               />
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-8 w-8 text-destructive/60 hover:text-destructive shrink-0"
+              <button
+                type="button"
                 onClick={() => deleteFilter.mutate(f.id)}
+                className="quiet h-10 px-2 -mr-2 rounded-md text-[13px] shrink-0"
               >
-                <Trash2 className="w-3.5 h-3.5" />
-              </Button>
+                remove
+              </button>
             </div>
           ))}
         </div>
-      ) : (
-        <p className="text-foreground/30 text-sm font-light text-center py-3">
-          No keyword filters yet
-        </p>
-      )}
-    </div>
+      ) : null}
+    </>
   );
 };
 

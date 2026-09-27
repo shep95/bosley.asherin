@@ -75,9 +75,9 @@ const Install = () => {
         alt=""
         aria-hidden="true"
         decoding="async"
-        className="fixed inset-0 w-full h-full object-cover opacity-60 pointer-events-none select-none"
+        className="wallpaper fixed inset-0 w-full h-full object-cover pointer-events-none select-none"
       />
-      <div className="fixed inset-0 bg-gradient-to-b from-background/60 via-background/75 to-background/95" />
+      <div className="wallpaper-scrim fixed inset-0" />
 
       <main className="relative z-10 min-h-screen px-5 sm:px-8 lg:px-12 pt-10 pb-20">
         <div className="max-w-6xl mx-auto">

@@ -4,36 +4,38 @@ import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
-import { Label } from "@/components/ui/label";
-import { Switch } from "@/components/ui/switch";
-import {
-  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
-} from "@/components/ui/select";
-import { Skeleton } from "@/components/ui/skeleton";
-import { Plus, Trash2, Zap, CheckCircle2, XCircle, Workflow } from "lucide-react";
+import { Loader2, Trash2 } from "lucide-react";
 import { toast } from "sonner";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import PageHeader from "@/components/layout/PageHeader";
+import EmptyState from "@/components/ui/empty-state";
 
 const TRIGGER_TYPES = [
-  { value: "likes_threshold", label: "Post hits like count" },
-  { value: "comments_threshold", label: "Post hits comment count" },
-  { value: "poll_winner", label: "Poll has a winner" },
-  { value: "time_after_post", label: "Time after post" },
+  { value: "likes_threshold", label: "a post reaches a number of likes" },
+  { value: "comments_threshold", label: "a post reaches a number of replies" },
+  { value: "poll_winner", label: "a poll closes with a winner" },
+  { value: "time_after_post", label: "some time has passed since the post" },
 ];
 
 const ACTION_TYPES = [
-  { value: "create_post", label: "Create a follow-up post" },
-  { value: "archive_post", label: "Archive the post (set private)" },
-  { value: "unpin_replace", label: "Replace pinned post" },
-  { value: "send_dm", label: "Send a DM" },
+  { value: "create_post", label: "post a follow-up" },
+  { value: "archive_post", label: "make the post private" },
+  { value: "unpin_replace", label: "replace the pinned post" },
+  { value: "send_dm", label: "message me" },
 ];
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type Rule = any;
+
+const selectClass = "field w-full h-10 bg-transparent text-[15px] font-light text-foreground focus:outline-none appearance-none pr-6 bg-no-repeat bg-[right_0_center] bg-[length:12px_12px] [background-image:url(\"data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23ffffff' stroke-opacity='0.4' stroke-width='1.5'><path d='M6 9l6 6 6-6'/></svg>\")] [&>option]:bg-background [&>option]:text-foreground";
+const fieldClass = "field w-full text-[15px] font-light text-foreground placeholder:text-foreground/35";
 
 const Rules = () => {
   const { user } = useAuth();
   const qc = useQueryClient();
   const [open, setOpen] = useState(false);
+  const [touched, setTouched] = useState(false);
 
   const [name, setName] = useState("");
   const [postId, setPostId] = useState("");
@@ -73,7 +75,6 @@ const Rules = () => {
     mutationFn: async () => {
       // Client-side validation (mirrors edge-function expectations) so rules
       // can't be created in a state that fires continuously or never fires.
-      const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
       if (postId && !UUID_RE.test(postId.trim())) {
         throw new Error("Post ID must be a valid UUID, or left blank.");
       }
@@ -125,8 +126,9 @@ const Rules = () => {
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["post-rules"] });
-      toast.success("Rule created");
+      toast.success("rule saved");
       setOpen(false);
+      setTouched(false);
       setName(""); setPostId(""); setActionContent(""); setExpectedOption("");
     },
     onError: (e: any) => toast.error(e.message),
@@ -148,167 +150,190 @@ const Rules = () => {
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["post-rules"] });
-      toast.success("Rule deleted");
+      toast.success("rule deleted");
     },
   });
 
+  // Inline validation: the same rules the mutation enforces, surfaced as you type.
+  const needsThreshold = triggerType === "likes_threshold" || triggerType === "comments_threshold";
+  const needsContent = actionType === "create_post" || actionType === "send_dm";
+  const postIdError = !postId.trim()
+    ? "paste the id of the post to watch."
+    : !UUID_RE.test(postId.trim()) ? "that is not a post id. it looks like 8-4-4-4-12 hex characters." : null;
+  const thresholdError = needsThreshold && (!Number.isFinite(threshold) || threshold < 1) ? "a whole number, at least 1." : null;
+  const minutesError = triggerType === "time_after_post" && (!Number.isFinite(minutes) || minutes < 1) ? "at least 1 minute." : null;
+  const contentError = needsContent && !actionContent.trim() ? "write what to send." : null;
+  const formValid = !postIdError && !thresholdError && !minutesError && !contentError;
+
+  const cancel = () => { setOpen(false); setTouched(false); setName(""); setPostId(""); setActionContent(""); setExpectedOption(""); };
+  const Hint = ({ text }: { text: string | null }) => (touched && text ? <p className="mt-1.5 text-[12px] font-light text-foreground/50">{text}</p> : null);
+
   return (
     <DashboardLayout>
-      <div className="max-w-3xl mx-auto px-4 py-6">
-        <div className="flex items-center justify-between mb-6">
-          <div className="flex items-center gap-2">
-            <Workflow className="w-6 h-6 text-foreground/80" />
-            <h1 className="text-2xl font-light text-foreground">Rules</h1>
-          </div>
+      <PageHeader
+        title="automations"
+        subtitle="small automations that run on your posts."
+        actions={
+          !open && (
+            <button onClick={() => setOpen(true)} className="quiet text-[13px] h-10 px-2 rounded-md">
+              new rule
+            </button>
+          )
+        }
+      />
 
-          <Dialog open={open} onOpenChange={setOpen}>
-            <DialogTrigger asChild>
-              <Button className="gap-2"><Plus className="w-4 h-4" /> New rule</Button>
-            </DialogTrigger>
-            <DialogContent className="max-w-lg">
-              <DialogHeader><DialogTitle>Create a rule</DialogTitle></DialogHeader>
-              <div className="space-y-4 py-2">
-                <div>
-                  <Label>Name</Label>
-                  <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="If launch post hits 100 likes…" />
-                </div>
-                <div>
-                  <Label>Post ID (optional, leave blank for account-wide)</Label>
-                  <Input value={postId} onChange={(e) => setPostId(e.target.value)} placeholder="UUID of the post" />
-                </div>
-                <div>
-                  <Label>When</Label>
-                  <Select value={triggerType} onValueChange={setTriggerType}>
-                    <SelectTrigger><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      {TRIGGER_TYPES.map((t) => <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>)}
-                    </SelectContent>
-                  </Select>
-                </div>
-                {(triggerType === "likes_threshold" || triggerType === "comments_threshold") && (
-                  <div>
-                    <Label>Threshold</Label>
-                    <Input type="number" min={1} value={threshold} onChange={(e) => setThreshold(parseInt(e.target.value || "1"))} />
-                  </div>
-                )}
-                {triggerType === "time_after_post" && (
-                  <div>
-                    <Label>Minutes after post</Label>
-                    <Input type="number" min={1} value={minutes} onChange={(e) => setMinutes(parseInt(e.target.value || "1"))} />
-                  </div>
-                )}
-                {triggerType === "poll_winner" && (
-                  <div>
-                    <Label>Expected winning option (optional)</Label>
-                    <Input value={expectedOption} onChange={(e) => setExpectedOption(e.target.value)} placeholder="Leave blank = any winner" />
-                  </div>
-                )}
-                <div>
-                  <Label>Then</Label>
-                  <Select value={actionType} onValueChange={setActionType}>
-                    <SelectTrigger><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      {ACTION_TYPES.map((t) => <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>)}
-                    </SelectContent>
-                  </Select>
-                </div>
-                {(actionType === "create_post" || actionType === "send_dm") && (
-                  <div>
-                    <Label>Content</Label>
-                    <Textarea rows={3} value={actionContent} onChange={(e) => setActionContent(e.target.value)} />
-                  </div>
-                )}
-                <Button className="w-full" onClick={() => createRule.mutate()} disabled={createRule.isPending}>
-                  {createRule.isPending ? "Creating…" : "Create rule"}
-                </Button>
+      {open && (
+        <form
+          className="row px-5 sm:px-8 py-5 space-y-5"
+          onSubmit={(e) => { e.preventDefault(); setTouched(true); if (formValid && !createRule.isPending) createRule.mutate(); }}
+        >
+          <input value={name} onChange={(e) => setName(e.target.value)} placeholder="name (optional)" autoFocus aria-label="rule name" className={fieldClass} />
+          <div>
+            <label className="block text-[12px] font-light text-foreground/40 mb-0.5">post to watch</label>
+            <input value={postId} onChange={(e) => setPostId(e.target.value)} onBlur={() => setTouched(true)} placeholder="the post id, from its address" aria-label="post id" aria-invalid={touched && !!postIdError} className={`${fieldClass} font-mono text-[13px]`} />
+            <Hint text={postIdError} />
+          </div>
+          <div className="grid sm:grid-cols-2 gap-x-8 gap-y-5">
+            <div>
+              <label htmlFor="rule-when" className="block text-[12px] font-light text-foreground/40 mb-0.5">when</label>
+              <select id="rule-when" value={triggerType} onChange={(e) => setTriggerType(e.target.value)} className={selectClass}>
+                {TRIGGER_TYPES.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
+              </select>
+            </div>
+            {needsThreshold && (
+              <div>
+                <label className="block text-[12px] font-light text-foreground/40 mb-0.5">how many</label>
+                <input type="number" min={1} inputMode="numeric" value={threshold} onChange={(e) => setThreshold(parseInt(e.target.value || "1"))} onBlur={() => setTouched(true)} aria-label="threshold" aria-invalid={touched && !!thresholdError} className={`${fieldClass} tabular-nums`} />
+                <Hint text={thresholdError} />
               </div>
-            </DialogContent>
-          </Dialog>
-        </div>
-
-        <p className="text-sm text-foreground/60 font-light mb-4">
-          Rules evaluate every minute. Use them to auto-publish a follow-up when a poll closes, archive a post after a threshold, replace your pinned post, or DM yourself when something fires.
-        </p>
-
-        {isLoading ? (
-          <div className="space-y-3">
-            {[0,1,2].map(i => <Skeleton key={i} className="h-24 w-full rounded-xl" />)}
+            )}
+            {triggerType === "time_after_post" && (
+              <div>
+                <label className="block text-[12px] font-light text-foreground/40 mb-0.5">minutes after</label>
+                <input type="number" min={1} inputMode="numeric" value={minutes} onChange={(e) => setMinutes(parseInt(e.target.value || "1"))} onBlur={() => setTouched(true)} aria-label="minutes" aria-invalid={touched && !!minutesError} className={`${fieldClass} tabular-nums`} />
+                <Hint text={minutesError} />
+              </div>
+            )}
+            {triggerType === "poll_winner" && (
+              <div>
+                <label className="block text-[12px] font-light text-foreground/40 mb-0.5">only if this option wins</label>
+                <input value={expectedOption} onChange={(e) => setExpectedOption(e.target.value)} placeholder="any winner" aria-label="expected option" className={fieldClass} />
+              </div>
+            )}
+            <div>
+              <label htmlFor="rule-then" className="block text-[12px] font-light text-foreground/40 mb-0.5">then</label>
+              <select id="rule-then" value={actionType} onChange={(e) => setActionType(e.target.value)} className={selectClass}>
+                {ACTION_TYPES.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
+              </select>
+            </div>
           </div>
-        ) : rules && rules.length > 0 ? (
-          <div className="space-y-3">
-            {rules.map((r: any) => (
-              <div key={r.id} className="glass-card rounded-xl p-4">
-                <div className="flex items-start justify-between gap-4">
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 mb-1">
-                      <Zap className="w-4 h-4 text-amber-400" />
-                      <h3 className="font-medium text-foreground truncate">{r.name}</h3>
-                    </div>
-                    <p className="text-xs text-foreground/60 font-light">
-                      <span className="text-foreground/80">When</span> {prettyTrigger(r)} →{" "}
-                      <span className="text-foreground/80">do</span> {prettyAction(r)}
-                    </p>
-                    <p className="text-[10px] uppercase tracking-wider text-foreground/40 mt-2">
-                      Fired {r.trigger_count} time{r.trigger_count === 1 ? "" : "s"}
-                      {r.last_triggered_at && ` · last ${new Date(r.last_triggered_at).toLocaleString()}`}
-                    </p>
-                  </div>
-                  <div className="flex items-center gap-2 flex-shrink-0">
-                    <Switch checked={r.is_active} onCheckedChange={(v) => toggleRule.mutate({ id: r.id, active: v })} />
-                    <Button variant="ghost" size="icon" onClick={() => { if (window.confirm(`Delete rule "${r.name}"? This cannot be undone.`)) deleteRule.mutate(r.id); }} className="h-8 w-8 text-foreground/40 hover:text-destructive">
-                      <Trash2 className="w-4 h-4" />
-                    </Button>
-                  </div>
-                </div>
+          {needsContent && (
+            <div>
+              <label className="block text-[12px] font-light text-foreground/40 mb-0.5">{actionType === "send_dm" ? "the message" : "the follow-up"}</label>
+              <textarea rows={3} value={actionContent} onChange={(e) => setActionContent(e.target.value)} onBlur={() => setTouched(true)} aria-label="content" aria-invalid={touched && !!contentError} className="w-full bg-transparent resize-none text-[15px] font-light leading-relaxed text-foreground placeholder:text-foreground/35 focus:outline-none" />
+              <Hint text={contentError} />
+            </div>
+          )}
+          <div className="flex items-center justify-between gap-4 pt-1">
+            <p className="text-[12px] font-light text-foreground/40">rules are checked once a minute.</p>
+            <div className="flex items-center gap-1 shrink-0">
+              <button type="button" onClick={cancel} className="quiet text-[13px] h-10 px-3 rounded-md">cancel</button>
+              <Button type="submit" variant="signal" size="sm" disabled={!formValid || createRule.isPending}>
+                {createRule.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : "save"}
+              </Button>
+            </div>
+          </div>
+        </form>
+      )}
+
+      {isLoading ? (
+        <div className="stagger" aria-busy="true">
+          {[0, 1, 2].map((i) => (
+            <div key={i} className="row px-5 sm:px-8 py-5 space-y-2.5" style={{ "--i": i } as React.CSSProperties}>
+              <div className="h-3 w-40 rounded bg-foreground/[0.08] animate-pulse" />
+              <div className="h-3 w-64 rounded bg-foreground/[0.06] animate-pulse" />
+            </div>
+          ))}
+        </div>
+      ) : rules && rules.length > 0 ? (
+        <div className="stagger">
+          {rules.map((r: Rule, idx: number) => (
+            <div key={r.id} className="row px-5 sm:px-8 py-5 flex items-start justify-between gap-4" style={{ "--i": Math.min(idx, 8) } as React.CSSProperties}>
+              <div className="flex-1 min-w-0">
+                <p className={`text-[15px] font-light truncate ${r.is_active ? "text-foreground" : "text-foreground/50"}`}>{r.name}</p>
+                <p className="mt-1 text-[13px] font-light text-foreground/60 leading-relaxed">
+                  when {prettyTrigger(r)}, {prettyAction(r)}.
+                </p>
+                <p className="mt-1.5 text-[12px] font-light text-foreground/40 tabular-nums">
+                  {r.trigger_count === 0 ? "has not fired yet" : `fired ${r.trigger_count} ${r.trigger_count === 1 ? "time" : "times"}`}
+                  {r.last_triggered_at && ` · last ${new Date(r.last_triggered_at).toLocaleString().toLowerCase()}`}
+                </p>
+              </div>
+              <div className="flex items-center shrink-0 -mr-2">
+                <button
+                  role="switch"
+                  aria-checked={r.is_active}
+                  onClick={() => toggleRule.mutate({ id: r.id, active: !r.is_active })}
+                  disabled={toggleRule.isPending}
+                  className="quiet text-[13px] h-10 px-2 rounded-md"
+                >
+                  {r.is_active ? "on" : "off"}
+                </button>
+                <button
+                  onClick={() => { if (window.confirm(`delete "${r.name}"? this cannot be undone.`)) deleteRule.mutate(r.id); }}
+                  aria-label={`delete ${r.name}`}
+                  className="quiet p-2 rounded-md hover:text-destructive"
+                >
+                  <Trash2 className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <EmptyState
+          title="no rules yet."
+          description="a rule watches one post and does one thing when something happens: a follow-up when a poll closes, or a message to you when a post takes off."
+          actionLabel="write one"
+          onAction={() => setOpen(true)}
+        />
+      )}
+
+      {recentRuns && recentRuns.length > 0 && (
+        <section className="pt-6">
+          <p className="px-5 sm:px-8 pb-1 text-[12px] font-light text-foreground/40">recent runs</p>
+          <div className="stagger">
+            {recentRuns.map((run: Rule, idx: number) => (
+              <div key={run.id} className="row px-5 sm:px-8 py-3 flex items-baseline gap-3 text-[13px] font-light" style={{ "--i": Math.min(idx, 8) } as React.CSSProperties}>
+                <span className="text-foreground/40 tabular-nums whitespace-nowrap">{new Date(run.created_at).toLocaleString().toLowerCase()}</span>
+                <span className={run.success ? "text-foreground/70" : "text-foreground"}>{run.success ? "ran" : "failed"}</span>
+                {run.error_message && <span className="text-foreground/50 truncate">{run.error_message}</span>}
               </div>
             ))}
           </div>
-        ) : (
-          <div className="glass-card rounded-xl p-8 text-center">
-            <Workflow className="w-10 h-10 mx-auto text-foreground/30 mb-3" />
-            <h2 className="text-base font-light text-foreground mb-1">No rules yet</h2>
-            <p className="text-sm text-foreground/60 font-light">Create a rule to automate post behavior.</p>
-          </div>
-        )}
-
-        {recentRuns && recentRuns.length > 0 && (
-          <div className="mt-10">
-            <h3 className="text-xs font-semibold uppercase tracking-wider text-foreground/50 mb-3">Recent runs</h3>
-            <div className="space-y-1.5">
-              {recentRuns.map((run: any) => (
-                <div key={run.id} className="flex items-center gap-2 text-xs text-foreground/60 font-light">
-                  {run.success
-                    ? <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />
-                    : <XCircle className="w-3.5 h-3.5 text-red-500" />}
-                  <span>{new Date(run.created_at).toLocaleString()}</span>
-                  {run.error_message && <span className="text-red-400 truncate">· {run.error_message}</span>}
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-      </div>
+        </section>
+      )}
     </DashboardLayout>
   );
 };
 
-function prettyTrigger(r: any) {
+function prettyTrigger(r: Rule) {
   const c = r.trigger_config ?? {};
   switch (r.trigger_type) {
-    case "likes_threshold": return `post hits ${c.threshold ?? 100} likes`;
-    case "comments_threshold": return `post hits ${c.threshold ?? 10} comments`;
-    case "time_after_post": return `${c.minutes ?? 60} minutes after the post`;
-    case "poll_winner": return c.expected_option ? `poll winner is "${c.expected_option}"` : "any poll winner is decided";
+    case "likes_threshold": return `the post reaches ${c.threshold ?? 100} likes`;
+    case "comments_threshold": return `the post reaches ${c.threshold ?? 10} replies`;
+    case "time_after_post": return `${c.minutes ?? 60} minutes have passed`;
+    case "poll_winner": return c.expected_option ? `the poll closes with "${c.expected_option}" winning` : "the poll closes";
     default: return r.trigger_type;
   }
 }
-function prettyAction(r: any) {
+function prettyAction(r: Rule) {
   const c = r.action_config ?? {};
   switch (r.action_type) {
-    case "create_post": return `create a new post${c.content ? `: "${String(c.content).slice(0, 40)}…"` : ""}`;
-    case "archive_post": return "archive the post";
-    case "unpin_replace": return "replace your pinned post";
-    case "send_dm": return "send a DM";
+    case "create_post": return `post a follow-up${c.content ? `: "${String(c.content).slice(0, 40)}…"` : ""}`;
+    case "archive_post": return "make it private";
+    case "unpin_replace": return "replace the pinned post";
+    case "send_dm": return "message you";
     default: return r.action_type;
   }
 }

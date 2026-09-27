@@ -1,14 +1,12 @@
-import { useState } from "react";
 import DashboardLayout from "@/components/layout/DashboardLayout";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Button } from "@/components/ui/button";
-import { 
-  Calendar, Clock, Loader2, Trash2, Send, Edit2 
-} from "lucide-react";
+import { Loader2, Trash2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { format } from "date-fns";
+import PageHeader from "@/components/layout/PageHeader";
+import EmptyState from "@/components/ui/empty-state";
 
 interface ScheduledPost {
   id: string;
@@ -49,14 +47,14 @@ const ScheduledPosts = () => {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['scheduled-posts'] });
-      toast({ title: "Scheduled post cancelled" });
+      toast({ title: "cancelled. it will not send." });
     }
   });
 
   const publishNow = useMutation({
     mutationFn: async (scheduledPost: ScheduledPost) => {
       if (!user) throw new Error("Not authenticated");
-      
+
       // Create the actual post
       const { error: postError } = await supabase.from('posts').insert({
         content: scheduledPost.content,
@@ -64,100 +62,88 @@ const ScheduledPosts = () => {
         media_urls: scheduledPost.media_urls,
         visibility: scheduledPost.visibility
       });
-      
+
       if (postError) throw postError;
-      
+
       // Mark scheduled post as published
       const { error: updateError } = await supabase
         .from('scheduled_posts')
         .update({ status: 'published', published_at: new Date().toISOString() })
         .eq('id', scheduledPost.id);
-      
+
       if (updateError) throw updateError;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['scheduled-posts'] });
       queryClient.invalidateQueries({ queryKey: ['posts'] });
-      toast({ title: "Post published!" });
+      toast({ title: "sent" });
     }
   });
 
-  if (isLoading) {
-    return (
-      <DashboardLayout>
-        <div className="flex items-center justify-center py-12">
-          <Loader2 className="w-8 h-8 animate-spin text-foreground/60" />
-        </div>
-      </DashboardLayout>
-    );
-  }
+  const count = scheduledPosts?.length ?? 0;
 
   return (
     <DashboardLayout>
-      <div className="max-w-2xl mx-auto px-4 py-6">
-        <div className="flex items-center gap-2 mb-6">
-          <Calendar className="w-6 h-6 text-foreground/80" />
-          <h1 className="text-2xl font-light text-foreground">Scheduled Posts</h1>
-        </div>
+      <PageHeader
+        title="scheduled"
+        subtitle={count > 0 ? `posts waiting for their time. ${count} in the queue.` : "posts waiting for their time."}
+      />
 
-        {scheduledPosts && scheduledPosts.length > 0 ? (
-          <div className="space-y-4">
-            {scheduledPosts.map((post: ScheduledPost) => (
-              <div 
-                key={post.id}
-                className="glass-card rounded-xl p-4 sm:p-6"
-              >
-                <div className="flex items-start justify-between gap-4 mb-3">
-                  <div className="flex items-center gap-2 text-foreground/60">
-                    <Clock className="w-4 h-4" />
-                    <span className="text-sm font-light">
-                      Scheduled for {format(new Date(post.scheduled_for), "MMM d, yyyy 'at' h:mm a")}
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => publishNow.mutate(post)}
-                      disabled={publishNow.isPending}
-                      className="text-foreground/60 hover:text-foreground"
-                    >
-                      <Send className="w-4 h-4 mr-1" />
-                      Publish Now
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => cancelScheduled.mutate(post.id)}
-                      className="text-foreground/40 hover:text-destructive"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </Button>
-                  </div>
-                </div>
-                
-                <p className="text-foreground font-light leading-relaxed whitespace-pre-wrap">
+      {isLoading ? (
+        <div className="stagger" aria-busy="true">
+          {[0, 1].map((i) => (
+            <div key={i} className="row px-5 sm:px-8 py-5 space-y-2.5" style={{ "--i": i } as React.CSSProperties}>
+              <div className="h-3 w-40 rounded bg-foreground/[0.05] animate-pulse" />
+              <div className="h-3 w-full rounded bg-foreground/[0.06] animate-pulse" />
+              <div className="h-3 w-2/3 rounded bg-foreground/[0.06] animate-pulse" />
+            </div>
+          ))}
+        </div>
+      ) : scheduledPosts && scheduledPosts.length > 0 ? (
+        <div className="stagger">
+          {(scheduledPosts as ScheduledPost[]).map((post, idx) => {
+            const sending = publishNow.isPending && publishNow.variables?.id === post.id;
+            return (
+              <div key={post.id} className="row px-5 sm:px-8 py-5" style={{ "--i": Math.min(idx, 8) } as React.CSSProperties}>
+                <p className="text-[12px] font-light text-foreground/40 tabular-nums">
+                  sends {format(new Date(post.scheduled_for), "EEE d MMM · HH:mm").toLowerCase()}
+                  {post.media_urls && post.media_urls.length > 0 && (
+                    <> · {post.media_urls.length} {post.media_urls.length === 1 ? "attachment" : "attachments"}</>
+                  )}
+                </p>
+                <p className="mt-2 text-[15.5px] font-light leading-[1.65] text-foreground/90 whitespace-pre-wrap [overflow-wrap:anywhere]">
                   {post.content}
                 </p>
-                
-                {post.media_urls && post.media_urls.length > 0 && (
-                  <div className="mt-3 text-foreground/50 text-sm">
-                    {post.media_urls.length} media file{post.media_urls.length > 1 ? 's' : ''} attached
-                  </div>
-                )}
+                <div className="mt-3 -ml-2 flex items-center gap-1 text-[13px]">
+                  <button
+                    onClick={() => publishNow.mutate(post)}
+                    disabled={publishNow.isPending}
+                    className="quiet h-10 px-2 rounded-md inline-flex items-center gap-2 disabled:opacity-50"
+                  >
+                    {sending && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                    send now
+                  </button>
+                  <button
+                    onClick={() => cancelScheduled.mutate(post.id)}
+                    disabled={cancelScheduled.isPending}
+                    aria-label="cancel scheduled post"
+                    className="quiet h-10 px-2 rounded-md hover:text-destructive ml-auto -mr-2"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                </div>
               </div>
-            ))}
-          </div>
-        ) : (
-          <div className="glass-card rounded-xl p-8 text-center">
-            <Calendar className="w-12 h-12 mx-auto text-foreground/30 mb-4" />
-            <h2 className="text-lg font-light text-foreground mb-2">No scheduled posts</h2>
-            <p className="text-foreground/60 font-light text-sm">
-              Schedule posts from the composer on your dashboard
-            </p>
-          </div>
-        )}
-      </div>
+            );
+          })}
+        </div>
+      ) : (
+        <EmptyState
+          title="nothing scheduled."
+          description="write a post and pick a time from the composer. it waits here until then."
+          actionLabel="write something"
+          actionTo="/dashboard"
+        />
+      )}
     </DashboardLayout>
   );
 };

@@ -2,8 +2,12 @@ import DashboardLayout from "@/components/layout/DashboardLayout";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
 import { useQuery } from "@tanstack/react-query";
-import { BarChart3, TrendingUp, Clock, Users, Heart, MessageSquare, Loader2 } from "lucide-react";
 import { format } from "date-fns";
+import { Link } from "react-router-dom";
+import PageHeader from "@/components/layout/PageHeader";
+import EmptyState from "@/components/ui/empty-state";
+
+type TopPost = { id: string; content: string; created_at: string; likes: number; comments: number; engagement: number };
 
 const Analytics = () => {
   const { user } = useAuth();
@@ -38,7 +42,7 @@ const Analytics = () => {
           totalComments: 0,
           followers: followersOnly || 0,
           following: followingOnly || 0,
-          topPosts: [] as any[],
+          topPosts: [] as TopPost[],
           bestDay: '—',
           bestHour: '—',
           avgEngagement: '0',
@@ -74,11 +78,11 @@ const Analytics = () => {
       // Aggregate per post
       const likesMap = new Map<string, number>();
       likes?.forEach(l => likesMap.set(l.post_id, (likesMap.get(l.post_id) || 0) + 1));
-      
+
       const commentsMap = new Map<string, number>();
       comments?.forEach(c => commentsMap.set(c.post_id, (commentsMap.get(c.post_id) || 0) + 1));
 
-      const postsWithStats = posts.map(p => ({
+      const postsWithStats: TopPost[] = posts.map(p => ({
         ...p,
         likes: likesMap.get(p.id) || 0,
         comments: commentsMap.get(p.id) || 0,
@@ -92,7 +96,7 @@ const Analytics = () => {
       posts.forEach(p => {
         dayDistribution[new Date(p.created_at).getDay()]++;
       });
-      const bestDay = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][dayDistribution.indexOf(Math.max(...dayDistribution))];
+      const bestDay = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'][dayDistribution.indexOf(Math.max(...dayDistribution))];
 
       // Posts per hour
       const hourDistribution = new Array(24).fill(0);
@@ -109,7 +113,7 @@ const Analytics = () => {
         following: following || 0,
         topPosts,
         bestDay,
-        bestHour: `${bestHour}:00`,
+        bestHour: `${String(bestHour).padStart(2, '0')}:00`,
         avgEngagement: postsWithStats.length > 0
           ? (postsWithStats.reduce((sum, p) => sum + p.engagement, 0) / postsWithStats.length).toFixed(1)
           : '0',
@@ -118,99 +122,79 @@ const Analytics = () => {
     enabled: !!user
   });
 
+  const maxEngagement = Math.max(1, ...(stats?.topPosts.map(p => p.engagement) ?? [0]));
+
+  const Line = ({ label, value }: { label: string; value: string | number }) => (
+    <div className="flex items-baseline justify-between gap-4 py-2.5 border-b border-foreground/[0.07] text-[14px] font-light">
+      <span className="text-foreground/50">{label}</span>
+      <span className="text-foreground tabular-nums">{value}</span>
+    </div>
+  );
+
   return (
     <DashboardLayout>
-      <div className="max-w-3xl mx-auto py-6 px-4">
-        <div className="flex items-center gap-3 mb-6">
-          <BarChart3 className="w-6 h-6 text-foreground/60" />
-          <h1 className="text-2xl font-light text-foreground">Analytics</h1>
+      <PageHeader title="analytics" subtitle="how your posts did. no vanity, just counts." />
+
+      {isLoading ? (
+        <div className="px-5 sm:px-8 py-4 stagger" aria-busy="true">
+          {[0, 1, 2, 3, 4].map((i) => (
+            <div key={i} className="flex items-center justify-between py-3 border-b border-foreground/[0.07]" style={{ "--i": i } as React.CSSProperties}>
+              <div className="h-3 w-20 rounded bg-foreground/[0.06] animate-pulse" />
+              <div className="h-3 w-8 rounded bg-foreground/[0.08] animate-pulse" />
+            </div>
+          ))}
         </div>
-
-        {isLoading ? (
-          <div className="flex justify-center py-20">
-            <Loader2 className="w-8 h-8 animate-spin text-foreground/30" />
-          </div>
-        ) : stats ? (
-          <div className="space-y-6">
-            {/* Overview cards */}
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-              {[
-                { label: "Posts", value: stats.totalPosts, icon: MessageSquare },
-                { label: "Likes", value: stats.totalLikes, icon: Heart },
-                { label: "Comments", value: stats.totalComments, icon: MessageSquare },
-                { label: "Followers", value: stats.followers, icon: Users },
-              ].map(({ label, value, icon: Icon }) => (
-                <div key={label} className="glass-card rounded-xl p-4 text-center">
-                  <Icon className="w-5 h-5 text-foreground/30 mx-auto mb-2" />
-                  <p className="text-2xl font-light text-foreground">{value}</p>
-                  <p className="text-xs text-foreground/40 font-light">{label}</p>
-                </div>
-              ))}
+      ) : stats ? (
+        <>
+          <section className="px-5 sm:px-8 pt-2 pb-6">
+            <div className="grid sm:grid-cols-2 gap-x-10">
+              <Line label="posts" value={stats.totalPosts} />
+              <Line label="likes" value={stats.totalLikes} />
+              <Line label="replies" value={stats.totalComments} />
+              <Line label="followers" value={stats.followers} />
+              <Line label="following" value={stats.following} />
+              <Line label="reactions per post" value={stats.avgEngagement} />
+              <Line label="you post most on" value={stats.bestDay} />
+              <Line label="usually around" value={stats.bestHour} />
             </div>
+          </section>
 
-            {/* Insights */}
-            <div className="glass-card rounded-xl p-6 space-y-4">
-              <h2 className="text-lg font-light text-foreground flex items-center gap-2">
-                <TrendingUp className="w-5 h-5 text-foreground/50" />
-                Insights
-              </h2>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                <div className="bg-accent/5 rounded-lg p-4">
-                  <p className="text-xs text-foreground/40 font-light uppercase tracking-wider">Best Day</p>
-                  <p className="text-lg font-light text-foreground mt-1">{stats.bestDay}</p>
-                </div>
-                <div className="bg-accent/5 rounded-lg p-4">
-                  <p className="text-xs text-foreground/40 font-light uppercase tracking-wider">Best Time</p>
-                  <p className="text-lg font-light text-foreground mt-1">{stats.bestHour}</p>
-                </div>
-                <div className="bg-accent/5 rounded-lg p-4">
-                  <p className="text-xs text-foreground/40 font-light uppercase tracking-wider">Avg Engagement</p>
-                  <p className="text-lg font-light text-foreground mt-1">{stats.avgEngagement}/post</p>
-                </div>
-              </div>
-            </div>
-
-            {/* Top posts */}
-            <div className="glass-card rounded-xl p-6">
-              <h2 className="text-lg font-light text-foreground mb-4 flex items-center gap-2">
-                <Clock className="w-5 h-5 text-foreground/50" />
-                Top Performing Posts
-              </h2>
-              {stats.topPosts.length > 0 ? (
-                <div className="space-y-3">
-                  {stats.topPosts.map((post: any, i: number) => (
-                    <div key={post.id} className="flex items-start gap-3 py-3 border-b border-border/10 last:border-0">
-                      <span className="text-foreground/20 text-lg font-light w-6 shrink-0">
-                        {i + 1}
-                      </span>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm text-foreground/70 font-light truncate">
-                          {post.content.substring(0, 100)}{post.content.length > 100 ? '...' : ''}
-                        </p>
-                        <div className="flex items-center gap-4 mt-1">
-                          <span className="text-xs text-foreground/30 font-light flex items-center gap-1">
-                            <Heart className="w-3 h-3" /> {post.likes}
-                          </span>
-                          <span className="text-xs text-foreground/30 font-light flex items-center gap-1">
-                            <MessageSquare className="w-3 h-3" /> {post.comments}
-                          </span>
-                          <span className="text-xs text-foreground/20 font-light">
-                            {format(new Date(post.created_at), 'MMM d')}
-                          </span>
-                        </div>
-                      </div>
+          <section className="pb-6">
+            <p className="px-5 sm:px-8 pb-1 text-[12px] font-light text-foreground/40">
+              {stats.topPosts.length > 0 ? "posts people responded to most" : "top posts"}
+            </p>
+            {stats.topPosts.length > 0 ? (
+              <div className="stagger">
+                {stats.topPosts.map((post, i) => (
+                  <Link
+                    key={post.id}
+                    to={`/post/${post.id}`}
+                    className="row block px-5 sm:px-8 py-4"
+                    style={{ "--i": i } as React.CSSProperties}
+                  >
+                    <div className="flex items-baseline justify-between gap-4 text-[14px] font-light">
+                      <p className="text-foreground/85 truncate">{post.content}</p>
+                      <p className="text-foreground/40 tabular-nums whitespace-nowrap text-[12px]">
+                        {post.likes} {post.likes === 1 ? "like" : "likes"} · {post.comments} {post.comments === 1 ? "reply" : "replies"} · {format(new Date(post.created_at), 'd MMM').toLowerCase()}
+                      </p>
                     </div>
-                  ))}
-                </div>
-              ) : (
-                <p className="text-foreground/30 text-sm font-light text-center py-4">
-                  Start posting to see your analytics
-                </p>
-              )}
-            </div>
-          </div>
-        ) : null}
-      </div>
+                    <div className="mt-2.5 h-px w-full bg-foreground/[0.06]">
+                      <div className="h-px bg-foreground/20 transition-[width] duration-[380ms] ease-soft" style={{ width: `${Math.max(2, (post.engagement / maxEngagement) * 100)}%` }} />
+                    </div>
+                  </Link>
+                ))}
+              </div>
+            ) : (
+              <EmptyState
+                title="no posts to count yet."
+                description="once you have written something, likes and replies show up here."
+                actionLabel="write something"
+                actionTo="/dashboard"
+              />
+            )}
+          </section>
+        </>
+      ) : null}
     </DashboardLayout>
   );
 };

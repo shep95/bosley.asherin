@@ -105,6 +105,16 @@ What the codebase enforces, and where.
 - Dependencies are pruned to what is imported; `npm audit` runs in CI.
 - Report vulnerabilities to `security@bosley.app` (`/.well-known/security.txt`).
 
+## interface system
+
+The interface follows one set of rules (see `src/index.css` primitives and `src/components/layout/`):
+
+- thin, lowercase type; one accent colour (`signal`) used only at commitment states (post, send, save, follow, an unread mark, the active room)
+- one reading column (`.room`) with hairline-separated rows (`.row`), no cards, no shadows
+- quiet actions (`.quiet`) that wake on hover, text tabs with a moving underline (`.text-tab`), underline fields (`.field`)
+- motion is opacity and transform only, one easing curve, honours reduced motion; loading states are page-shaped skeletons
+- every list has an empty state with exactly one next action
+
 ## project layout
 
 ```

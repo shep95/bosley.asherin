@@ -1,10 +1,9 @@
 import { ReactNode } from "react";
 import { Link } from "react-router-dom";
-import { LucideIcon } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { LucideIcon, ArrowUpRight } from "lucide-react";
 
 interface EmptyStateProps {
-  icon: LucideIcon;
+  icon?: LucideIcon;
   /** What is missing, in plain words. */
   title: string;
   /** One sentence that explains what this space is for. */
@@ -17,40 +16,23 @@ interface EmptyStateProps {
 }
 
 /**
- * An empty screen should teach, not apologise. Every empty state states what
- * lives here, why it is blank, and offers exactly one way forward — removing
- * the dead-end that makes people abandon a section for good.
+ * An empty room says what it is for and offers one door. No illustration,
+ * no apology, no box.
  */
-const EmptyState = ({
-  icon: Icon,
-  title,
-  description,
-  actionLabel,
-  actionTo,
-  onAction,
-  children,
-}: EmptyStateProps) => (
-  <div className="glass-card rounded-xl p-10 text-center">
-    <div className="w-14 h-14 rounded-xl bg-foreground/5 border border-foreground/10 flex items-center justify-center mx-auto mb-4">
-      <Icon className="w-6 h-6 text-foreground/40" />
-    </div>
-    <p className="text-foreground font-medium">{title}</p>
-    <p className="text-foreground/55 text-sm mt-1.5 max-w-sm mx-auto leading-relaxed">
-      {description}
-    </p>
+const EmptyState = ({ title, description, actionLabel, actionTo, onAction, children }: EmptyStateProps) => (
+  <div className="px-5 sm:px-8 py-14">
+    <p className="text-[1.375rem] font-extralight lowercase tracking-[-0.02em] text-foreground">{title}</p>
+    <p className="mt-2 text-[14px] font-light text-foreground/50 max-w-md leading-relaxed">{description}</p>
     {actionLabel && (actionTo || onAction) && (
-      <div className="mt-5">
+      <div className="mt-6">
         {actionTo ? (
-          <Button asChild className="rounded-xl bg-signal text-signal-foreground hover:bg-signal/90 press">
-            <Link to={actionTo}>{actionLabel}</Link>
-          </Button>
+          <Link to={actionTo} className="inline-flex items-center gap-1.5 text-[14px] text-foreground hover:text-signal transition-colors">
+            {actionLabel} <ArrowUpRight className="w-3.5 h-3.5" />
+          </Link>
         ) : (
-          <Button
-            onClick={onAction}
-            className="rounded-xl bg-signal text-signal-foreground hover:bg-signal/90 press"
-          >
-            {actionLabel}
-          </Button>
+          <button onClick={onAction} className="inline-flex items-center gap-1.5 text-[14px] text-foreground hover:text-signal transition-colors">
+            {actionLabel} <ArrowUpRight className="w-3.5 h-3.5" />
+          </button>
         )}
       </div>
     )}
