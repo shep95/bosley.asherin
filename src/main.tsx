@@ -29,10 +29,12 @@ const ConfigMissing = () => (
         this build has no backend.
       </h1>
       <p className="mt-8 text-foreground/60 font-light leading-relaxed">
-        the site was built without <code className="text-foreground/85">VITE_SUPABASE_URL</code> and{" "}
-        <code className="text-foreground/85">VITE_SUPABASE_PUBLISHABLE_KEY</code>. on vercel, add them under
-        project → settings → environment variables for production and preview, then redeploy. locally, copy{" "}
-        <code className="text-foreground/85">.env.example</code> to <code className="text-foreground/85">.env</code>.
+        the site was built without a supabase url and publishable key. on vercel, either connect the supabase
+        integration (project → settings → integrations) or add{" "}
+        <code className="text-foreground/85">VITE_SUPABASE_URL</code> and{" "}
+        <code className="text-foreground/85">VITE_SUPABASE_PUBLISHABLE_KEY</code> under environment variables,
+        then redeploy. locally, copy <code className="text-foreground/85">.env.example</code> to{" "}
+        <code className="text-foreground/85">.env</code>.
       </p>
     </div>
   </main>
