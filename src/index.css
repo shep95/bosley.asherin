@@ -1,3 +1,6 @@
+/* Self-hosted Inter (variable weight). No third-party font request, no render-blocking CSS, no IP leak. */
+@import "@fontsource-variable/inter";
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -105,7 +108,7 @@
 
   body {
     @apply bg-background text-foreground antialiased;
-    font-family: 'Inter', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+    font-family: 'Inter Variable', 'Inter', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
     font-feature-settings: 'cv11', 'ss01', 'calt';
     text-rendering: optimizeLegibility;
   }
@@ -211,6 +214,30 @@
     color: hsl(var(--signal));
   }
 
+  /* Scroll reveal — one vocabulary for the whole site. Elements arrive from
+     slightly below on one easing curve; opacity + transform only, so the
+     compositor does all the work and nothing repaints. */
+  .reveal {
+    opacity: 0;
+    transform: translateY(14px);
+    transition:
+      opacity var(--dur-slow) var(--ease-out-soft),
+      transform var(--dur-slow) var(--ease-out-soft);
+    transition-delay: var(--reveal-delay, 0ms);
+    will-change: opacity, transform;
+  }
+  .reveal.is-visible {
+    opacity: 1;
+    transform: none;
+    will-change: auto;
+  }
+
+  /* Feed entrance: each card takes its place a beat after the previous one. */
+  .stagger > * {
+    animation: fade-up 0.32s var(--ease-out-soft) both;
+    animation-delay: calc(var(--stagger-step, 40ms) * var(--i, 0));
+  }
+
   /* Respect vestibular sensitivity: kill all motion, keep all state. */
   @media (prefers-reduced-motion: reduce) {
     *,
@@ -223,6 +250,11 @@
     }
     .lift:hover {
       transform: none;
+    }
+    .reveal {
+      opacity: 1;
+      transform: none;
+      transition: none;
     }
   }
 }

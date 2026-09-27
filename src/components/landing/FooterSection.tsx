@@ -1,24 +1,13 @@
 import { Link } from "react-router-dom";
-import { motion } from "framer-motion";
+import { useReveal } from "@/hooks/useReveal";
 import { Mail } from "lucide-react";
 import Brandmark from "@/components/Brandmark";
 
-const blurFadeIn = {
-  hidden: { opacity: 0, y: 20, filter: "blur(8px)" },
-  visible: { opacity: 1, y: 0, filter: "blur(0px)" },
-};
-
 const FooterSection = () => {
   const year = new Date().getFullYear();
+  const ref = useReveal<HTMLElement>();
   return (
-    <motion.footer
-      className="px-4 sm:px-6 lg:px-10 pt-24 pb-10 border-t border-border/15 relative"
-      variants={blurFadeIn}
-      initial="hidden"
-      whileInView="visible"
-      viewport={{ once: true, margin: "-50px" }}
-      transition={{ duration: 0.6 }}
-    >
+    <footer ref={ref} className="reveal px-4 sm:px-6 lg:px-10 pt-24 pb-10 border-t border-border/15 relative">
       <div className="max-w-6xl mx-auto">
         <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-12 mb-20">
           <div className="max-w-xs">
@@ -57,7 +46,7 @@ const FooterSection = () => {
         </div>
 
         <p className="text-foreground/80 text-3xl sm:text-5xl md:text-6xl font-extralight tracking-[-0.03em] leading-[1.05] max-w-4xl">
-          Speak freely. <span className="text-foreground/60 italic">Quietly.</span>
+          speak freely. <span className="text-foreground/60">quietly.</span>
         </p>
 
         <div className="mt-16 pt-6 border-t border-border/15 flex flex-col sm:flex-row items-center justify-between gap-3 text-foreground/60 text-xs font-light">
@@ -67,7 +56,7 @@ const FooterSection = () => {
           </span>
         </div>
       </div>
-    </motion.footer>
+    </footer>
   );
 };
 

@@ -7,6 +7,21 @@ import "./index.css";
 
 installConsoleGuard();
 
+// Open the TLS connection to the API while the JavaScript is still parsing,
+// so the first session check and feed query do not pay the handshake.
+try {
+  const api = import.meta.env.VITE_SUPABASE_URL as string | undefined;
+  if (api) {
+    const link = document.createElement("link");
+    link.rel = "preconnect";
+    link.href = new URL(api).origin;
+    link.crossOrigin = "anonymous";
+    document.head.appendChild(link);
+  }
+} catch {
+  /* invalid URL: the config screen will say so */
+}
+
 // Frame-busting fallback. The real control is the `frame-ancestors 'none'`
 // CSP + X-Frame-Options headers served by Vercel (see vercel.json).
 try {

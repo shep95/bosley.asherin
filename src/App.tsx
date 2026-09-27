@@ -57,9 +57,33 @@ const queryClient = new QueryClient({
   },
 });
 
+/**
+ * Route-level loading is a quiet shell of the page that is coming, not a
+ * spinner: the wallpaper, the chrome, and three placeholder cards. Nothing
+ * jumps when the real page replaces it.
+ */
 const RouteFallback = () => (
-  <div className="min-h-screen bg-background flex items-center justify-center">
-    <div className="w-8 h-8 border-2 border-foreground/20 border-t-foreground rounded-full animate-spin" />
+  <div className="min-h-screen bg-background relative" aria-busy="true" aria-label="loading">
+    <div className="fixed inset-0 bg-gradient-to-b from-background/40 via-background/60 to-background/85" />
+    <div className="relative z-10 max-w-2xl mx-auto px-4 pt-20 lg:pt-10 space-y-4 stagger">
+      <div className="h-8 w-40 rounded-md bg-foreground/[0.06] animate-pulse" style={{ "--i": 0 } as React.CSSProperties} />
+      {[1, 2, 3].map((i) => (
+        <div
+          key={i}
+          className="glass-card rounded-xl p-5 animate-pulse"
+          style={{ "--i": i } as React.CSSProperties}
+        >
+          <div className="flex items-start gap-3">
+            <div className="w-10 h-10 rounded-full bg-foreground/[0.08]" />
+            <div className="flex-1 space-y-2.5 pt-1">
+              <div className="h-3 w-32 rounded bg-foreground/[0.08]" />
+              <div className="h-3 w-full rounded bg-foreground/[0.06]" />
+              <div className="h-3 w-4/5 rounded bg-foreground/[0.06]" />
+            </div>
+          </div>
+        </div>
+      ))}
+    </div>
   </div>
 );
 
@@ -67,11 +91,7 @@ const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
   const { user, loading, mfaRequired, clearMfaRequired, signOut } = useAuth();
 
   if (loading) {
-    return (
-      <div className="min-h-screen bg-background flex items-center justify-center">
-        <div className="w-8 h-8 border-2 border-foreground/20 border-t-foreground rounded-full animate-spin" />
-      </div>
-    );
+    return <RouteFallback />;
   }
 
   if (!user) {

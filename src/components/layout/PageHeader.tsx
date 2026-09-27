@@ -30,7 +30,7 @@ const PageHeader = ({
     <div className="sticky top-0 z-20 page-header">
       <div className="px-6 py-4 flex items-center justify-between gap-4">
         <div className="min-w-0">
-          <h1 className="text-[1.375rem] font-semibold tracking-[-0.02em] text-foreground truncate">
+          <h1 className="text-[1.375rem] font-medium lowercase tracking-[-0.02em] text-foreground truncate">
             {title}
           </h1>
           {(subtitle || statusLabel) && (
@@ -41,7 +41,7 @@ const PageHeader = ({
                 />
               )}
               {statusLabel && (
-                <span className="text-[10px] text-foreground/55 uppercase font-medium tracking-[0.12em]">
+                <span className="text-[10px] text-foreground/55 uppercase font-light tracking-[0.18em]">
                   {statusLabel}
                 </span>
               )}

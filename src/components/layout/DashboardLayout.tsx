@@ -262,7 +262,7 @@ const DashboardLayout = ({ children }: DashboardLayoutProps) => {
           />
         )}
         <Icon className={`w-4 h-4 flex-shrink-0 transition-opacity ${isActive ? "opacity-100" : "opacity-70 group-hover:opacity-100"}`} />
-        <span className="truncate flex-1 text-left">{node.label}</span>
+        <span className="truncate flex-1 text-left lowercase">{node.label}</span>
         {showMessageBadge && (
           <span className="ml-auto flex-shrink-0 bg-destructive text-destructive-foreground text-[10px] font-semibold rounded-full flex items-center justify-center min-w-[17px] h-[17px] px-1 tabular-nums">
             {unreadMessages > 99 ? "99+" : unreadMessages}
@@ -434,7 +434,7 @@ const DashboardLayout = ({ children }: DashboardLayoutProps) => {
                               className="w-full flex items-center gap-2 px-2 py-1.5 rounded-lg text-foreground/55 hover:text-foreground/85 transition-colors"
                             >
                               <BIcon className="w-3.5 h-3.5" />
-                              <span className="text-[10px] font-semibold uppercase tracking-[0.14em] flex-1 text-left">
+                              <span className="text-[10px] font-light uppercase tracking-[0.2em] flex-1 text-left">
                                 {branch.label}
                               </span>
                               <ChevronDown
@@ -535,7 +535,7 @@ const DashboardLayout = ({ children }: DashboardLayoutProps) => {
                     )}
                   </div>
                   <span
-                    className={`text-[10px] mt-1 font-medium tracking-tight ${
+                    className={`text-[10px] mt-1 font-medium tracking-tight lowercase ${
                       isCompose ? "text-signal" : isActive ? "text-foreground" : "text-foreground/65"
                     }`}
                   >

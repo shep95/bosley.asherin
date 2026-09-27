@@ -1,6 +1,5 @@
 import { ReactNode, Suspense, lazy, useEffect, useRef, useState, useCallback } from "react";
 import { Menu, X, GripVertical } from "lucide-react";
-import { motion, AnimatePresence } from "framer-motion";
 
 // The live pane is closed on arrival, yet its whole dependency tree — post
 // cards, polls, the video player, the storage client — used to ship inside the
@@ -14,8 +13,8 @@ interface Props {
 
 /**
  * Splits the landing page into a left landing pane and a right LIVE embedded
- * app pane. Triggered via a floating hamburger button. The divider is
- * mouse-draggable so users can scale either side freely.
+ * app pane. Desktop only. The divider is mouse-draggable so either side can be
+ * scaled freely. Width changes are CSS transitions, so no animation runtime.
  */
 const SplitShell = ({ children, onOpenAuth }: Props) => {
   const [open, setOpen] = useState(false);
@@ -42,8 +41,6 @@ const SplitShell = ({ children, onOpenAuth }: Props) => {
     return () => {
       window.removeEventListener("mousemove", onMouseMove);
       window.removeEventListener("mouseup", stopDrag);
-      // Ensure we never leave the page stuck with drag styles if the component
-      // unmounts mid-drag (e.g. SPA navigation while the pane is open).
       document.body.style.cursor = "";
       document.body.style.userSelect = "";
     };
@@ -55,51 +52,45 @@ const SplitShell = ({ children, onOpenAuth }: Props) => {
     document.body.style.userSelect = "none";
   };
 
-  const landingWidth = open ? `${100 - appWidthPct}%` : "100%";
-  const appWidth = open ? `${appWidthPct}%` : "0%";
+  // While dragging, transitions are off so the divider tracks the cursor 1:1.
+  const paneTransition = dragging.current ? "none" : "width var(--dur-slow) var(--ease-out-soft)";
 
   return (
     <div className="flex w-screen min-h-screen overflow-hidden">
       {/* Landing pane */}
-      <motion.div
-        animate={{ width: landingWidth }}
-        transition={{ type: "spring", stiffness: 220, damping: 32 }}
+      <div
+        style={{ width: open ? `${100 - appWidthPct}%` : "100%", transition: paneTransition }}
         className="relative overflow-y-auto overflow-x-hidden"
       >
         {children}
-      </motion.div>
+      </div>
 
       {/* Divider */}
-      <AnimatePresence>
-        {open && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            onMouseDown={startDrag}
-            className="relative w-1.5 cursor-col-resize bg-foreground/5 hover:bg-foreground/15 transition-colors flex-shrink-0 z-40 group"
-          >
-            <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-6 h-12 rounded-md bg-foreground/10 backdrop-blur-md border border-foreground/15 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-              <GripVertical className="w-3.5 h-3.5 text-foreground/70" />
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+      {open && (
+        <div
+          onMouseDown={startDrag}
+          className="relative w-1.5 cursor-col-resize bg-foreground/5 hover:bg-foreground/15 transition-colors flex-shrink-0 z-40 group animate-in fade-in duration-200"
+        >
+          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-6 h-12 rounded-md bg-foreground/10 backdrop-blur-md border border-foreground/15 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+            <GripVertical className="w-3.5 h-3.5 text-foreground/70" />
+          </div>
+        </div>
+      )}
 
       {/* App pane (real, live) */}
-      <motion.div
-        animate={{ width: appWidth }}
-        transition={{ type: "spring", stiffness: 220, damping: 32 }}
+      <div
+        style={{ width: open ? `${appWidthPct}%` : "0%", transition: paneTransition }}
         className="relative overflow-hidden border-l border-foreground/10"
       >
         {open && (
           <div className="h-screen sticky top-0 relative">
-            {/* Subtle scrim so text stays legible over the shared wallpaper */}
             <div className="absolute inset-0 bg-gradient-to-b from-background/40 via-background/55 to-background/75 backdrop-blur-md pointer-events-none" />
             <Suspense
               fallback={
-                <div className="h-full flex items-center justify-center">
-                  <div className="w-6 h-6 border-2 border-foreground/20 border-t-foreground rounded-full animate-spin" />
+                <div className="h-full p-5 space-y-3">
+                  {[0, 1, 2].map((i) => (
+                    <div key={i} className="glass-card rounded-lg h-28 animate-pulse" />
+                  ))}
                 </div>
               }
             >
@@ -107,13 +98,14 @@ const SplitShell = ({ children, onOpenAuth }: Props) => {
             </Suspense>
           </div>
         )}
-      </motion.div>
+      </div>
 
-      {/* Floating toggle — always visible on top-right of landing area */}
+      {/* Floating toggle — desktop only; the header owns the top-right on phones */}
       <button
         onClick={() => setOpen((v) => !v)}
-        aria-label={open ? "Close live app" : "Open live app"}
-        className="hidden lg:flex fixed top-5 right-5 z-[60] glass rounded-xl h-11 w-11 items-center justify-center text-foreground/80 hover:text-foreground hover:scale-105 active:scale-95 transition-all"
+        aria-label={open ? "close live app" : "open live app"}
+        aria-expanded={open}
+        className="hidden lg:flex fixed top-5 right-5 z-[60] glass rounded-xl h-11 w-11 items-center justify-center text-foreground/80 hover:text-foreground press transition-colors"
       >
         {open ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
       </button>

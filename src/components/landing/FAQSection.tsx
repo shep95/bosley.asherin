@@ -1,10 +1,5 @@
-import { motion } from "framer-motion";
+import { useReveal } from "@/hooks/useReveal";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
-
-const blurFadeIn = {
-  hidden: { opacity: 0, y: 14 },
-  visible: { opacity: 1, y: 0 },
-};
 
 const faqs = [
   {
@@ -30,29 +25,16 @@ const faqs = [
 ];
 
 const FAQSection = () => {
+  const ref = useReveal<HTMLElement>();
   return (
-    <section className="py-24 sm:py-32 px-4 sm:px-6 lg:px-8 relative">
+    <section ref={ref} className="py-24 sm:py-32 px-4 sm:px-6 lg:px-8 relative">
       <div className="max-w-3xl mx-auto">
-        <motion.div
-          className="text-center mb-16"
-          variants={blurFadeIn}
-          initial="hidden"
-          whileInView="visible"
-          viewport={{ once: true, margin: "-100px" }}
-          transition={{ duration: 0.6 }}
-        >
+        <div className="reveal text-center mb-16">
           <p className="text-foreground/60 text-xs font-light tracking-[0.2em] uppercase mb-4">questions</p>
           <h2 className="text-3xl sm:text-4xl md:text-5xl font-extralight text-foreground">answered plainly</h2>
-        </motion.div>
+        </div>
 
-        <motion.div
-          className="glass rounded-2xl overflow-hidden"
-          variants={blurFadeIn}
-          initial="hidden"
-          whileInView="visible"
-          viewport={{ once: true, margin: "-50px" }}
-          transition={{ duration: 0.6 }}
-        >
+        <div className="reveal glass rounded-2xl overflow-hidden" style={{ "--reveal-delay": "80ms" } as React.CSSProperties}>
           <Accordion type="single" collapsible className="w-full">
             {faqs.map((faq, index) => (
               <AccordionItem key={index} value={`item-${index}`} className="border-border/10 px-6 sm:px-8">
@@ -65,7 +47,7 @@ const FAQSection = () => {
               </AccordionItem>
             ))}
           </Accordion>
-        </motion.div>
+        </div>
       </div>
     </section>
   );

@@ -4,7 +4,6 @@ import PostComposer from "@/components/feed/PostComposer";
 import PostCard from "@/components/feed/PostCard";
 import FeedControls from "@/components/feed/FeedControls";
 import FeedSkeleton from "@/components/feed/FeedSkeleton";
-import { motion } from "framer-motion";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -228,14 +227,9 @@ const Dashboard = () => {
         {isLoading ? (
           <FeedSkeleton count={4} />
         ) : posts && posts.length > 0 ? (
-          <div className="space-y-4">
+          <div className="space-y-4 stagger">
             {visiblePosts.map((post, idx) => (
-              <motion.div
-                key={post.id}
-                initial={{ opacity: 0, y: 12 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.35, delay: Math.min(idx, 8) * 0.04, ease: "easeOut" }}
-              >
+              <div key={post.id} style={{ "--i": Math.min(idx, 8) } as React.CSSProperties}>
                 <PostCard
                   post={post}
                   likesCount={post.likesCount}
@@ -243,7 +237,7 @@ const Dashboard = () => {
                   isLiked={post.isLiked}
                   isBookmarked={post.isBookmarked}
                 />
-              </motion.div>
+              </div>
             ))}
             {hasMore ? (
               <div className="flex justify-center pt-2">
