@@ -73,22 +73,25 @@ CREATE POLICY "Public badge fields readable when active"
 ON public.user_verifications FOR SELECT TO authenticated
 USING (false); -- view bypasses; direct table access stays restricted
 
--- 4. Realtime: remove broad topic subscriptions
-DROP POLICY IF EXISTS "Authenticated users can subscribe to their own topics" ON realtime.messages;
-DROP POLICY IF EXISTS "Authenticated users can broadcast to their own topics" ON realtime.messages;
-
-CREATE POLICY "Realtime: subscribe only to per-user topics"
-ON realtime.messages FOR SELECT TO authenticated
-USING (
-  realtime.topic() = ('user:' || auth.uid()::text)
-  OR realtime.topic() = ('notifications:' || auth.uid()::text)
-  OR realtime.topic() = ('messages:' || auth.uid()::text)
-);
-
-CREATE POLICY "Realtime: broadcast only to own topics"
-ON realtime.messages FOR INSERT TO authenticated
-WITH CHECK (
-  realtime.topic() = ('user:' || auth.uid()::text)
-  OR realtime.topic() = ('notifications:' || auth.uid()::text)
-  OR realtime.topic() = ('messages:' || auth.uid()::text)
-);
+-- 4. Realtime: remove broad topic subscriptions (best-effort, see 20260424155543)
+DO $$
+BEGIN
+  EXECUTE 'DROP POLICY IF EXISTS "Authenticated users can subscribe to their own topics" ON realtime.messages';
+  EXECUTE 'DROP POLICY IF EXISTS "Authenticated users can broadcast to their own topics" ON realtime.messages';
+  EXECUTE $p$CREATE POLICY "Realtime: subscribe only to per-user topics"
+    ON realtime.messages FOR SELECT TO authenticated
+    USING (
+      realtime.topic() = ('user:' || auth.uid()::text)
+      OR realtime.topic() = ('notifications:' || auth.uid()::text)
+      OR realtime.topic() = ('messages:' || auth.uid()::text)
+    )$p$;
+  EXECUTE $p$CREATE POLICY "Realtime: broadcast only to own topics"
+    ON realtime.messages FOR INSERT TO authenticated
+    WITH CHECK (
+      realtime.topic() = ('user:' || auth.uid()::text)
+      OR realtime.topic() = ('notifications:' || auth.uid()::text)
+      OR realtime.topic() = ('messages:' || auth.uid()::text)
+    )$p$;
+EXCEPTION WHEN insufficient_privilege THEN
+  RAISE NOTICE 'skipping realtime.messages policies: %', SQLERRM;
+END $$;

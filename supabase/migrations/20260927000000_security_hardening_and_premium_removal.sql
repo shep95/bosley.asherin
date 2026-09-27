@@ -320,6 +320,13 @@ UPDATE storage.buckets
 -- Before: any signed-in user could insert unlimited "X liked your post" rows
 -- for any target user (spam vector). Now triggers on the real events create
 -- them and the client INSERT policy is closed.
+-- The original CHECK only allowed like/comment/follow/mention; the triggers
+-- below also emit 'repost' and 'reply', so widen it first.
+ALTER TABLE public.notifications DROP CONSTRAINT IF EXISTS notifications_type_check;
+ALTER TABLE public.notifications
+  ADD CONSTRAINT notifications_type_check
+  CHECK (type IN ('like', 'comment', 'reply', 'follow', 'mention', 'repost'));
+
 CREATE OR REPLACE FUNCTION public.notify_on_post_like()
 RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
 DECLARE owner uuid;

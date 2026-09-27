@@ -118,33 +118,30 @@ USING (
 );
 
 -- 7. REALTIME CHANNEL AUTHORIZATION
--- Lock down realtime subscriptions so users can only subscribe to topics they own
-ALTER TABLE realtime.messages ENABLE ROW LEVEL SECURITY;
-
--- Allow authenticated users to subscribe only to topics that match their own user id,
--- their DM conversation, or public channels they participate in.
-DROP POLICY IF EXISTS "Authenticated users can subscribe to their own topics" ON realtime.messages;
-CREATE POLICY "Authenticated users can subscribe to their own topics"
-ON realtime.messages
-FOR SELECT
-TO authenticated
-USING (
-  -- Personal user channel: topic equals "user:<uid>" or contains the user id
-  (realtime.topic() = ('user:' || auth.uid()::text))
-  OR (realtime.topic() = ('notifications:' || auth.uid()::text))
-  OR (realtime.topic() = ('messages:' || auth.uid()::text))
-  -- Public table broadcast channels (postgres_changes for non-private tables)
-  OR (realtime.topic() IN ('posts', 'comments', 'post_likes', 'post_reactions', 'follows', 'hashtags'))
-);
-
--- Allow authenticated users to broadcast only to their own channels
-DROP POLICY IF EXISTS "Authenticated users can broadcast to their own topics" ON realtime.messages;
-CREATE POLICY "Authenticated users can broadcast to their own topics"
-ON realtime.messages
-FOR INSERT
-TO authenticated
-WITH CHECK (
-  (realtime.topic() = ('user:' || auth.uid()::text))
-  OR (realtime.topic() = ('notifications:' || auth.uid()::text))
-  OR (realtime.topic() = ('messages:' || auth.uid()::text))
-);
+-- realtime.messages is owned by the realtime service role on hosted Supabase,
+-- so a plain ALTER/CREATE POLICY fails with "must be owner". RLS is already on
+-- for that table on new projects and the app only uses public postgres_changes
+-- channels, so this block is best-effort.
+DO $$
+BEGIN
+  EXECUTE 'ALTER TABLE realtime.messages ENABLE ROW LEVEL SECURITY';
+  EXECUTE 'DROP POLICY IF EXISTS "Authenticated users can subscribe to their own topics" ON realtime.messages';
+  EXECUTE $p$CREATE POLICY "Authenticated users can subscribe to their own topics"
+    ON realtime.messages FOR SELECT TO authenticated
+    USING (
+      (realtime.topic() = ('user:' || auth.uid()::text))
+      OR (realtime.topic() = ('notifications:' || auth.uid()::text))
+      OR (realtime.topic() = ('messages:' || auth.uid()::text))
+      OR (realtime.topic() IN ('posts', 'comments', 'post_likes', 'post_reactions', 'follows', 'hashtags'))
+    )$p$;
+  EXECUTE 'DROP POLICY IF EXISTS "Authenticated users can broadcast to their own topics" ON realtime.messages';
+  EXECUTE $p$CREATE POLICY "Authenticated users can broadcast to their own topics"
+    ON realtime.messages FOR INSERT TO authenticated
+    WITH CHECK (
+      (realtime.topic() = ('user:' || auth.uid()::text))
+      OR (realtime.topic() = ('notifications:' || auth.uid()::text))
+      OR (realtime.topic() = ('messages:' || auth.uid()::text))
+    )$p$;
+EXCEPTION WHEN insufficient_privilege THEN
+  RAISE NOTICE 'skipping realtime.messages policies: %', SQLERRM;
+END $$;
