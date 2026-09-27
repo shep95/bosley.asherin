@@ -100,11 +100,20 @@ What the codebase enforces, and where.
 - Vulnerability scanner paths (`/.env`, `/.git/`, `/wp-login.php`, `*.php`, `*.sql`, …) get an instant 404 at the edge.
 - Dependabot, a gitleaks secret scan and `npm audit` run in CI. See `SECURITY.md` for the disclosure policy.
 
+**database audit (27 Sep 2026, live project)** — what an outsider and a signed-in user can actually reach
+- Anonymous key: no table or view is readable (every `/rest/v1/<table>` returns 401), the OpenAPI document at `/rest/v1/` lists zero paths, GraphQL is not enabled, storage bucket listing returns nothing and every bucket is private (media is only served through short-lived signed URLs). The only callable RPCs are the capped landing preview and the two sign-up pre-checks.
+- Signed-in user: `login_attempts`, `audit_log`, `profile_private`, `blocked_email_domains`, `post_flags`, `moderation_actions` and `user_roles` return no rows; inserting a notification, posting as another user, editing another profile and calling the audit RPC are all refused by RLS or missing EXECUTE.
+- Edge functions answer `Access-Control-Allow-Origin: null` to unknown origins.
+- Web: scrapers and generic HTTP clients (curl, python-requests, Scrapy, Go, GPTBot, CCBot, headless browsers, empty user agents) get 403 at the edge; Googlebot is allowed on public pages only; every authenticated route is served with `X-Robots-Tag: noindex, nofollow, noarchive, nosnippet` and `Cache-Control: private, no-store`; no source maps are published.
+- Migrations `20260927150000`–`20260927160000` carry the grants and policy tightening this audit produced; the Supabase security advisor reports only the three intentional public RPCs.
+
 **settings to apply in the Supabase dashboard** (not expressible in code)
+- Auth → URL configuration: Site URL `https://bosley.asherin.com`; redirect allow-list `https://bosley.asherin.com/dashboard` and `https://bosley.asherin.com/reset-password`. Until then confirmation links land on the Vercel alias, which `vercel.json` redirects to the custom domain so the flow still completes.
+- Auth → Passwords: enable leaked-password protection (HaveIBeenPwned). The client already checks, this makes the server enforce it.
+- Auth → SMTP: configure a custom sender; the built-in mailer is limited to a handful of emails per hour.
 - API → Max rows: set to 100 (default 1000) to cap bulk reads per request.
 - Auth → Rate limits: keep the defaults or lower them; Auth → Bot and Abuse Protection → enable Turnstile if you set the site key.
 - Auth → Email: keep "secure email change" (double confirmation) on; require email confirmation for sign-ups.
-- Auth → URL configuration: only your production and preview origins in the redirect allow-list.
 
 **operational**
 - `.env` is git-ignored and untracked. The only values the browser bundle contains are the Supabase URL and the publishable (anon) key, which is by design public and gated by RLS.

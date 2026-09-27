@@ -11,7 +11,7 @@ import EmptyState from "@/components/ui/empty-state";
 
 interface Notification {
   id: string;
-  type: 'like' | 'comment' | 'follow' | 'mention' | 'repost';
+  type: 'like' | 'comment' | 'reply' | 'follow' | 'mention' | 'repost';
   actor_id: string;
   post_id: string | null;
   comment_id: string | null;
@@ -40,6 +40,7 @@ const shortTime = (dateString: string) => {
 const VERB: Record<Notification["type"], string> = {
   like: "liked your post",
   comment: "replied to your post",
+  reply: "replied to your comment",
   follow: "followed you",
   mention: "mentioned you",
   repost: "reposted your post",

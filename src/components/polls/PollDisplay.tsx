@@ -30,6 +30,9 @@ const PollDisplay = ({ postId }: PollDisplayProps) => {
   // Fetch poll data
   const { data: pollData, isLoading } = useQuery({
     queryKey: ['poll', postId],
+    // Polls are readable by signed-in users only; do not fire with the anon key
+    // while the session is still hydrating.
+    enabled: !!user,
     queryFn: async () => {
       const { data: poll } = await supabase
         .from('polls')
