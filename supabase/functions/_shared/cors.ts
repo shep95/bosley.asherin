@@ -9,7 +9,14 @@
  *   supabase secrets set ALLOWED_ORIGINS="https://bosley.app,https://www.bosley.app"
  *   supabase secrets set ALLOWED_ORIGIN_PATTERN="^https://bosley[a-z0-9-]*\.vercel\.app$"
  */
-const DEFAULT_ORIGINS = ["https://bosley.app", "https://www.bosley.app"];
+const DEFAULT_ORIGINS = [
+  "https://bosley.asherin.com",
+  "https://www.bosley.asherin.com",
+  "https://bosley.app",
+  "https://www.bosley.app",
+];
+// Vercel preview + production aliases for the bosley.asherin project.
+const DEFAULT_PATTERN = /^https:\/\/bosleyasherin(-[a-z0-9-]+)?\.vercel\.app$/i;
 
 function allowedOrigins(): string[] {
   const raw = Deno.env.get("ALLOWED_ORIGINS");
@@ -19,7 +26,7 @@ function allowedOrigins(): string[] {
 
 function allowedPattern(): RegExp | null {
   const raw = Deno.env.get("ALLOWED_ORIGIN_PATTERN");
-  if (!raw) return null;
+  if (!raw) return DEFAULT_PATTERN;
   try {
     return new RegExp(raw, "i");
   } catch {
