@@ -26,7 +26,7 @@ jobs:
       SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
       PROJECT_ID: ${{ vars.SUPABASE_PROJECT_ID }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Check configuration
         id: cfg
         run: |
