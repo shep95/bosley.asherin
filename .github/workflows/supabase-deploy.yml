@@ -5,7 +5,7 @@ name: Deploy Supabase
 #   SUPABASE_ACCESS_TOKEN  – personal access token (supabase.com/dashboard/account/tokens)
 #   SUPABASE_DB_PASSWORD   – the project's database password
 # and one repository variable:
-#   SUPABASE_PROJECT_ID    – e.g. jvlziovytepaojbzkjyp
+#   SUPABASE_PROJECT_ID    – the project ref, e.g. gmtaqzvnzcswhzbmwxyi
 # The job is skipped (not failed) until they exist.
 
 on:

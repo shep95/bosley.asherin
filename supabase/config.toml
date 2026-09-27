@@ -1,4 +1,4 @@
-project_id = "jvlziovytepaojbzkjyp"
+project_id = "gmtaqzvnzcswhzbmwxyi"
 
 [functions.check-login-rate]
 verify_jwt = false

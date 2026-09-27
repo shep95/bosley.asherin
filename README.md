@@ -19,9 +19,11 @@ npm run dev               # http://localhost:8080
 ## deploy to vercel
 
 1. Import the GitHub repository in Vercel. `vercel.json` already sets the framework (Vite), the build command, the SPA rewrite and the security headers.
-2. Add the environment variables for **Production and Preview**:
-   `VITE_SUPABASE_URL`, `VITE_SUPABASE_PUBLISHABLE_KEY`, `VITE_SUPABASE_PROJECT_ID`.
-   The build fails fast with a readable error if they are missing.
+2. Connect Supabase: either install the **Supabase integration** (Project → Settings → Integrations), whose
+   `SUPABASE_URL` / `SUPABASE_PUBLISHABLE_KEY` variables the build picks up automatically, or add
+   `VITE_SUPABASE_URL` and `VITE_SUPABASE_PUBLISHABLE_KEY` by hand for **Production and Preview**.
+   A build without either renders a visible configuration screen instead of the app.
+   The build refuses to run if the key it is given is a service-role key.
 3. Deploy. `middleware.ts` runs at the edge on every request and blocks scrapers (see below).
 
 ### supabase setup for the vercel domain
@@ -35,10 +37,14 @@ npm run dev               # http://localhost:8080
 - **Apply the schema and functions:**
 
   ```sh
-  supabase link --project-ref <project-id>
-  supabase db push
-  supabase functions deploy
+  npx supabase login
+  npx supabase link --project-ref <project-ref>     # the ref is the subdomain of your Supabase URL
+  npx supabase db push
+  npx supabase functions deploy
   ```
+
+  A project created by the Vercel integration starts empty: run this once before the first sign-up,
+  otherwise the app loads but every query fails because no tables exist.
 
   The `Deploy Supabase` GitHub workflow does this automatically on pushes to `main` once the
   `SUPABASE_ACCESS_TOKEN` / `SUPABASE_DB_PASSWORD` secrets and the `SUPABASE_PROJECT_ID` variable exist.
