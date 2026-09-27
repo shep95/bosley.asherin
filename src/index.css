@@ -1,0 +1,228 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 0 0% 0%;
+    --foreground: 0 0% 100%;
+
+    --card: 0 0% 10.6%;
+    --card-foreground: 0 0% 100%;
+
+    --popover: 0 0% 10.6%;
+    --popover-foreground: 0 0% 100%;
+
+    --primary: 0 0% 0%;
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 0 0% 10.6%;
+    --secondary-foreground: 0 0% 100%;
+
+    --muted: 0 0% 15%;
+    --muted-foreground: 0 0% 60%;
+
+    --accent: 0 0% 20%;
+    --accent-foreground: 0 0% 100%;
+
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 0 0% 20%;
+    --input: 0 0% 20%;
+    --ring: 0 0% 100%;
+
+    /* Radius scale — one decision per tier, not one value everywhere.
+       controls (buttons, inputs) 6px · surfaces (cards, sheets) 10px · chrome (panels) 16px */
+    --radius: 0.625rem;
+    --radius-control: 0.375rem;
+    --radius-chrome: 1rem;
+
+    /* Glass effect tokens - pure transparent */
+    --glass-bg: 0 0% 100% / 0.02;
+    --glass-border: 0 0% 100% / 0.08;
+    --glass-blur: 12px;
+
+    /* Elevation surfaces — readable scrims that sit over the wallpaper.
+       Depth is communicated by opacity + blur, never by hue shifts. */
+    --surface-1: 0 0% 4% / 0.42;
+    --surface-2: 0 0% 4% / 0.58;
+    --surface-3: 0 0% 6% / 0.74;
+    --hairline: 0 0% 100% / 0.07;
+    --hairline-strong: 0 0% 100% / 0.14;
+
+    /* Signal accent — warm amber, pulled from the wallpaper.
+       Warm hues read as approachable; reserved for state, never decoration. */
+    --signal: 41 96% 62%;
+    --signal-foreground: 0 0% 8%;
+
+    /* Motion — one easing family so the whole product feels like one hand. */
+    --ease-out-soft: cubic-bezier(0.22, 1, 0.36, 1);
+    --dur-fast: 120ms;
+    --dur-base: 200ms;
+    --dur-slow: 380ms;
+
+    /* Elevation shadows */
+    --shadow-card: 0 1px 2px hsl(0 0% 0% / 0.4), 0 8px 24px -12px hsl(0 0% 0% / 0.6);
+    --shadow-lift: 0 2px 4px hsl(0 0% 0% / 0.4), 0 18px 40px -16px hsl(0 0% 0% / 0.7);
+  }
+
+  .dark {
+    --background: 0 0% 0%;
+    --foreground: 0 0% 100%;
+
+    --card: 0 0% 10.6%;
+    --card-foreground: 0 0% 100%;
+
+    --popover: 0 0% 10.6%;
+    --popover-foreground: 0 0% 100%;
+
+    --primary: 0 0% 0%;
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 0 0% 10.6%;
+    --secondary-foreground: 0 0% 100%;
+
+    --muted: 0 0% 15%;
+    --muted-foreground: 0 0% 60%;
+
+    --accent: 0 0% 20%;
+    --accent-foreground: 0 0% 100%;
+
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 0 0% 20%;
+    --input: 0 0% 20%;
+    --ring: 0 0% 100%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-family: 'Inter', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+    font-feature-settings: 'cv11', 'ss01', 'calt';
+    text-rendering: optimizeLegibility;
+  }
+
+  /* Modern scrollbar styling */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: hsl(var(--muted)) transparent;
+  }
+
+  *::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+
+  *::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  *::-webkit-scrollbar-thumb {
+    background: hsl(var(--muted));
+    border-radius: 4px;
+  }
+
+  *::-webkit-scrollbar-thumb:hover {
+    background: hsl(var(--muted-foreground));
+  }
+}
+
+@layer components {
+  .glass {
+    background: hsl(var(--glass-bg));
+    backdrop-filter: blur(var(--glass-blur));
+    -webkit-backdrop-filter: blur(var(--glass-blur));
+    border: 1px solid hsl(var(--glass-border));
+  }
+
+  /* Reading surface: enough scrim that long-form text never fights the
+     wallpaper, still translucent enough to feel like one continuous space. */
+  .glass-card {
+    background: hsl(var(--surface-1));
+    backdrop-filter: blur(18px) saturate(115%);
+    -webkit-backdrop-filter: blur(18px) saturate(115%);
+    border: 1px solid hsl(var(--hairline));
+    box-shadow: var(--shadow-card);
+    transition:
+      background var(--dur-base) var(--ease-out-soft),
+      border-color var(--dur-base) var(--ease-out-soft),
+      box-shadow var(--dur-base) var(--ease-out-soft),
+      transform var(--dur-base) var(--ease-out-soft);
+  }
+
+  /* Chrome surface: headers, sidebars, sheets — denser, sits above content. */
+  .glass-panel {
+    background: hsl(var(--surface-3));
+    backdrop-filter: blur(24px) saturate(120%);
+    -webkit-backdrop-filter: blur(24px) saturate(120%);
+    border-color: hsl(var(--hairline));
+  }
+
+  /* Inset controls: composers, inputs, segmented tracks. */
+  .glass-inset {
+    background: hsl(0 0% 100% / 0.035);
+    border: 1px solid hsl(var(--hairline));
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+  }
+
+  /* Page chrome: flat, opaque, zero blur. Headers should read as a stable
+     anchor, not a frosted pane fighting the wallpaper behind it. */
+  .page-header {
+    /* Verified in the running app: the header scrolls out of view rather than
+       pinning over the feed, so nothing ever passes behind it. That means it
+       needs no tint and no blur — the wallpaper reads straight through, and
+       only a hairline marks where the header ends. */
+    background: transparent;
+    border-bottom: 1px solid hsl(var(--hairline) / 0.5);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+}
+
+@layer utilities {
+  /* Hover lift — small, fast, and only on devices that actually hover. */
+  @media (hover: hover) {
+    .lift:hover {
+      background: hsl(var(--surface-2));
+      border-color: hsl(var(--hairline-strong));
+      box-shadow: var(--shadow-lift);
+      transform: translateY(-1px);
+    }
+  }
+
+  /* Tactile press feedback — confirms the tap landed before the network does. */
+  .press {
+    transition: transform var(--dur-fast) var(--ease-out-soft);
+  }
+  .press:active {
+    transform: scale(0.97);
+  }
+
+  .text-signal {
+    color: hsl(var(--signal));
+  }
+
+  /* Respect vestibular sensitivity: kill all motion, keep all state. */
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.001ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.001ms !important;
+      scroll-behavior: auto !important;
+    }
+    .lift:hover {
+      transform: none;
+    }
+  }
+}

@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>a quiet room on the internet.</title>
+    <meta
+      name="description"
+      content="bosley is a free social space with a chronological feed, no ads, and no engagement farming. write. talk. leave when you want."
+    />
+    <meta name="author" content="Zorak Corp" />
+    <meta name="robots" content="index, follow" />
+    <meta name="theme-color" content="#000000" />
+    <meta name="color-scheme" content="dark" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Bosley" />
+    <meta name="application-name" content="Bosley" />
+    <meta http-equiv="X-Content-Type-Options" content="nosniff" />
+    <!-- X-Frame-Options is header-only; framebusting lives in src/main.tsx. -->
+    <meta name="referrer" content="strict-origin-when-cross-origin" />
+    <meta http-equiv="Permissions-Policy" content="camera=(), microphone=(), geolocation=()" />
+    <!--
+      Defence in depth: the authoritative CSP, HSTS and frame-ancestors are HTTP
+      response headers set in vercel.json. This meta copy applies if the site is
+      ever served from a host without those headers. Keep both in sync.
+      'unsafe-inline' for scripts is required by Vite's inline module-preload polyfill.
+    -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob: https:; media-src 'self' data: blob: https://*.supabase.co; connect-src 'self' https://*.supabase.co wss://*.supabase.co https://api.pwnedpasswords.com https://fonts.googleapis.com https://fonts.gstatic.com; base-uri 'self'; form-action 'self'; object-src 'none'; upgrade-insecure-requests;"
+    />
+    <meta http-equiv="X-DNS-Prefetch-Control" content="off" />
+    <meta http-equiv="X-Download-Options" content="noopen" />
+    <meta http-equiv="X-Permitted-Cross-Domain-Policies" content="none" />
+
+    <link rel="canonical" href="https://bosley.app/" />
+    <link rel="alternate" type="text/plain" title="llms.txt" href="https://bosley.app/llms.txt" />
+    <link rel="icon" type="image/png" href="/favicon.png" />
+    <link rel="apple-touch-icon" href="/favicon.png" />
+
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://bosley.app/" />
+    <meta property="og:title" content="a quiet room on the internet." />
+    <meta
+      property="og:description"
+      content="bosley is a free social space with a chronological feed, no ads, and no engagement farming. write. talk. leave when you want."
+    />
+    <meta property="og:image" content="https://bosley.app/og-image.jpg" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="681" />
+    <meta property="og:image:alt" content="bosley — a quiet room on the internet." />
+    <meta property="og:site_name" content="Bosley" />
+    <meta property="og:locale" content="en_US" />
+
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="a quiet room on the internet." />
+    <meta
+      name="twitter:description"
+      content="bosley is a free social space with a chronological feed, no ads, and no engagement farming. write. talk. leave when you want."
+    />
+    <meta name="twitter:image" content="https://bosley.app/og-image.jpg" />
+    <meta name="twitter:image:alt" content="bosley — a quiet room on the internet." />
+
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@graph": [
+          {
+            "@type": "Organization",
+            "@id": "https://bosley.app/#org",
+            "name": "Bosley",
+            "legalName": "Zorak Corp",
+            "url": "https://bosley.app",
+            "email": "asher@bosley.app",
+            "foundingDate": "2024-09-05",
+            "founder": { "@type": "Person", "name": "Asher Newton" }
+          },
+          {
+            "@type": "WebSite",
+            "@id": "https://bosley.app/#website",
+            "name": "Bosley",
+            "url": "https://bosley.app/",
+            "description": "a quiet room on the internet.",
+            "publisher": { "@id": "https://bosley.app/#org" },
+            "inLanguage": "en"
+          },
+          {
+            "@type": "SoftwareApplication",
+            "name": "Bosley",
+            "url": "https://bosley.app",
+            "applicationCategory": "SocialNetworkingApplication",
+            "operatingSystem": "Web",
+            "description": "bosley is a free social space with a chronological feed, no ads, and no engagement farming.",
+            "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
+            "author": { "@id": "https://bosley.app/#org" }
+          }
+        ]
+      }
+    </script>
+
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "FAQPage",
+        "mainEntity": [
+          {"@type":"Question","name":"is this free?","acceptedAnswer":{"@type":"Answer","text":"yes. free to join. no credit card. asher@bosley.app if something is broken."}},
+          {"@type":"Question","name":"are messages unreadable on your servers?","acceptedAnswer":{"@type":"Answer","text":"we do not claim that. https in transit. we do not claim unreadable on our servers."}},
+          {"@type":"Question","name":"is there an algorithm?","acceptedAnswer":{"@type":"Answer","text":"the feed is chronological by default. no ads. no engagement farming."}},
+          {"@type":"Question","name":"can i leave?","acceptedAnswer":{"@type":"Answer","text":"export and delete anytime."}},
+          {"@type":"Question","name":"who runs this?","acceptedAnswer":{"@type":"Answer","text":"asher newton. zorak corp. founded sept 5, 2024. support asher@bosley.app."}}
+        ]
+      }
+    </script>
+
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@200;300;400;500&display=swap" rel="stylesheet" />
+  </head>
+
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

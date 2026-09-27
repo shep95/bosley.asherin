@@ -1,0 +1,50 @@
+name: Deploy Supabase
+
+# Pushes migrations and edge functions to the linked Supabase project whenever
+# they change on main. Requires two repository secrets:
+#   SUPABASE_ACCESS_TOKEN  – personal access token (supabase.com/dashboard/account/tokens)
+#   SUPABASE_DB_PASSWORD   – the project's database password
+# and one repository variable:
+#   SUPABASE_PROJECT_ID    – e.g. jvlziovytepaojbzkjyp
+# The job is skipped (not failed) until they exist.
+
+on:
+  push:
+    branches: ["main"]
+    paths: ["supabase/**"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+      PROJECT_ID: ${{ vars.SUPABASE_PROJECT_ID }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check configuration
+        id: cfg
+        run: |
+          if [ -z "$SUPABASE_ACCESS_TOKEN" ] || [ -z "$PROJECT_ID" ]; then
+            echo "Supabase secrets not configured; skipping deploy."; echo "ok=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "ok=true" >> "$GITHUB_OUTPUT"
+          fi
+      - uses: supabase/setup-cli@v1
+        if: steps.cfg.outputs.ok == 'true'
+        with:
+          version: latest
+      - name: Link project
+        if: steps.cfg.outputs.ok == 'true'
+        run: supabase link --project-ref "$PROJECT_ID"
+      - name: Push migrations
+        if: steps.cfg.outputs.ok == 'true'
+        run: supabase db push
+      - name: Deploy edge functions
+        if: steps.cfg.outputs.ok == 'true'
+        run: supabase functions deploy --project-ref "$PROJECT_ID"

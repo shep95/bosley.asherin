@@ -1,0 +1,53 @@
+# retrieval bots share the same crawl map as User-agent: *
+# do not give googlebot its own Allow: / group. that used to skip disallows.
+
+User-agent: Google-Extended
+Disallow: /
+
+User-agent: GPTBot
+Disallow: /
+
+User-agent: CCBot
+Disallow: /
+
+User-agent: *
+Allow: /
+Disallow: /dashboard
+Disallow: /feed
+Disallow: /explore
+Disallow: /search
+Disallow: /notifications
+Disallow: /messages
+Disallow: /bookmarks
+Disallow: /lists
+Disallow: /communities
+Disallow: /events
+Disallow: /drafts
+Disallow: /rules
+Disallow: /templates
+Disallow: /compose
+Disallow: /calendar
+Disallow: /profile
+Disallow: /settings
+Disallow: /sponsors
+Disallow: /subscription
+Disallow: /scheduled
+Disallow: /analytics
+Disallow: /user/
+Disallow: /post/
+Disallow: /admin
+Disallow: /login
+Disallow: /signup
+Disallow: /recovery
+Disallow: /.git
+Disallow: /.svn
+Disallow: /.env
+Disallow: /_headers
+Disallow: /_redirects
+Disallow: /src/
+Disallow: /supabase/
+Disallow: /*.map$
+Disallow: /*.sql$
+Disallow: /*.bak$
+
+Sitemap: https://bosley.app/sitemap.xml

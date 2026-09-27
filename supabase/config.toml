@@ -1,0 +1,18 @@
+project_id = "jvlziovytepaojbzkjyp"
+
+[functions.check-login-rate]
+verify_jwt = false
+
+[functions.export-data]
+verify_jwt = false
+
+[functions.audit-log]
+verify_jwt = false
+
+# Internal scheduler endpoint. JWT verification is disabled at the gateway
+# because the function performs its own service-role-key auth check in code.
+[functions.evaluate-post-rules]
+verify_jwt = false
+
+# asherin.fold-memory lives in postgres schema fold_memory.
+# 24/7 cron fold-memory-tick-1m. leftover copies fold. unique dms stay. frontend out.

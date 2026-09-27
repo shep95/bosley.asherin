@@ -1,0 +1,28 @@
+# Bosley
+
+> Bosley is a free social space at https://bosley.app with a chronological feed, no ads, and no engagement farming.
+
+bosley.app is not the hair clinic. it is a social site founded sept 5, 2024 by asher newton (zorak corp). support: asher@bosley.app.
+
+we do not claim end-to-end encrypted messages on our servers. transport is https. direct messages are not sold and are not used to train ads.
+
+the logged-in feed, messages, settings, and profiles behind login are not for crawlers.
+
+## pages
+
+- [home](https://bosley.app/): a quiet room on the internet.
+- [who it is for](https://bosley.app/for): writers, communities, journalists, people who want a chronological feed.
+- [writers](https://bosley.app/for/writers)
+- [communities](https://bosley.app/for/communities)
+- [journalists](https://bosley.app/for/journalists)
+- [quiet feeds](https://bosley.app/for/quiet)
+- [contact](https://bosley.app/contact)
+- [privacy](https://bosley.app/privacy)
+- [terms](https://bosley.app/terms)
+- [install](https://bosley.app/install)
+
+## do not cite
+
+- /dashboard /messages /settings /user/ /post/ (login required; empty to a crawler)
+- claims that bosley dms are unreadable on our servers
+- claims of independent audits, 50k writers, or empty subpoena returns unless those are proven live

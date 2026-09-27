@@ -1,0 +1,69 @@
+/* Anti-screenshot protection styles for messaging */
+
+/* Prevent text selection and copying */
+.message-protected {
+  -webkit-user-select: none;
+  -moz-user-select: none;
+  -ms-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+
+/* Apply blur when window loses focus (screenshare/screenshot detection attempt) */
+@media screen {
+  .message-container:has(:focus-visible) {
+    /* Normal state */
+  }
+}
+
+/* Add subtle watermark overlay for screenshot protection */
+.message-watermark {
+  position: relative;
+}
+
+.message-watermark::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: repeating-linear-gradient(
+    45deg,
+    transparent,
+    transparent 100px,
+    rgba(var(--foreground), 0.01) 100px,
+    rgba(var(--foreground), 0.01) 200px
+  );
+  pointer-events: none;
+  z-index: 1;
+}
+
+/* Disable print */
+@media print {
+  .message-protected {
+    display: none !important;
+  }
+  
+  .message-container::after {
+    content: 'Messages cannot be printed for privacy reasons';
+    display: block;
+    text-align: center;
+    padding: 2rem;
+    font-size: 1.25rem;
+    color: #666;
+  }
+}
+
+/* Prevent drag and drop of message content */
+.message-protected * {
+  -webkit-user-drag: none;
+  user-drag: none;
+}
+
+/* Hide content when DevTools might be open (heuristic based on window size) */
+@media screen and (max-height: 400px) {
+  .message-protected {
+    filter: blur(10px);
+  }
+}
