@@ -5,6 +5,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useMutation } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { Loader2 } from "lucide-react";
+import { isRateLimitError, SLOW_DOWN } from "@/lib/dbErrors";
 
 interface AskQuestionFormProps {
   recipientUserId: string;
@@ -44,10 +45,15 @@ const AskQuestionForm = ({ recipientUserId, recipientUsername }: AskQuestionForm
         description: `@${recipientUsername} will not see who asked.`
       });
     },
-    onError: () => {
+    onError: (error) => {
+      // The database refuses questions when the recipient has q&a turned off.
+      const code = (error as { code?: string } | null)?.code;
       toast({
-        title: "could not send",
-        description: "check your connection and try again.",
+        title: isRateLimitError(error)
+          ? SLOW_DOWN
+          : code === "42501"
+            ? `@${recipientUsername} is not taking questions right now.`
+            : "could not send. check your connection and try again.",
         variant: "destructive"
       });
     }

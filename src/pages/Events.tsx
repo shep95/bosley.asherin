@@ -9,6 +9,7 @@ import { useToast } from "@/hooks/use-toast";
 import { format } from "date-fns";
 import PageHeader from "@/components/layout/PageHeader";
 import EmptyState from "@/components/ui/empty-state";
+import { friendlyDbError, isUniqueViolation } from "@/lib/dbErrors";
 
 type EventRow = {
   id: string;
@@ -34,50 +35,39 @@ const Events = () => {
   const [startsAt, setStartsAt] = useState("");
   const [touched, setTouched] = useState(false);
 
+  const eventsKey = ['events', user?.id];
+
   const { data: events, isLoading } = useQuery({
-    queryKey: ['events'],
-    queryFn: async () => {
-      const { data } = await supabase
+    queryKey: eventsKey,
+    queryFn: async (): Promise<EventRow[]> => {
+      // One request: the visible events, with going / interested counted per
+      // event by the database and the viewer's own RSVP embedded. No RSVP
+      // rows are downloaded to be counted here.
+      let query = supabase
         .from('events')
-        .select('*')
+        .select('id, title, description, location, virtual_url, starts_at, going:event_rsvps(count), interested:event_rsvps(count), mine:event_rsvps(status)')
         .gte('starts_at', new Date().toISOString())
+        .eq('going.status', 'going')
+        .eq('interested.status', 'interested')
         .order('starts_at', { ascending: true })
         .limit(50);
-      if (!data) return [];
+      // Without a user there is no "mine"; an impossible id keeps it empty.
+      query = query.eq('mine.user_id', user?.id ?? '00000000-0000-0000-0000-000000000000');
+      const { data, error } = await query;
+      if (error) throw error;
 
-      // Fetch RSVPs for current user
-      if (user) {
-        const eventIds = data.map(e => e.id);
-        const { data: rsvps } = await supabase
-          .from('event_rsvps')
-          .select('event_id, status')
-          .eq('user_id', user.id)
-          .in('event_id', eventIds);
-        const rsvpMap = new Map(rsvps?.map(r => [r.event_id, r.status]) || []);
-
-        // Get RSVP counts
-        const { data: allRsvps } = await supabase
-          .from('event_rsvps')
-          .select('event_id, status')
-          .in('event_id', eventIds)
-          .in('status', ['going', 'interested']);
-
-        const countMap = new Map<string, { going: number; interested: number }>();
-        allRsvps?.forEach(r => {
-          const prev = countMap.get(r.event_id) || { going: 0, interested: 0 };
-          if (r.status === 'going') prev.going++;
-          else if (r.status === 'interested') prev.interested++;
-          countMap.set(r.event_id, prev);
-        });
-
-        return data.map(e => ({
-          ...e,
-          userRsvp: rsvpMap.get(e.id) || null,
-          goingCount: countMap.get(e.id)?.going || 0,
-          interestedCount: countMap.get(e.id)?.interested || 0,
-        }));
-      }
-      return data.map(e => ({ ...e, userRsvp: null, goingCount: 0, interestedCount: 0 }));
+      type CountEmbed = { count: number }[] | null;
+      return (data ?? []).map((e) => ({
+        id: e.id,
+        title: e.title,
+        description: e.description,
+        location: e.location,
+        virtual_url: e.virtual_url,
+        starts_at: e.starts_at,
+        userRsvp: (e.mine as { status: string }[] | null)?.[0]?.status ?? null,
+        goingCount: (e.going as CountEmbed)?.[0]?.count ?? 0,
+        interestedCount: (e.interested as CountEmbed)?.[0]?.count ?? 0,
+      }));
     }
   });
 
@@ -101,27 +91,60 @@ const Events = () => {
       setTouched(false);
       toast({ title: "event created" });
     },
-    onError: (e: Error) => toast({ title: "could not create it", description: e.message, variant: "destructive" })
+    onError: (e) => toast({ title: friendlyDbError(e, "could not create it. try again."), variant: "destructive" })
   });
 
+  // Optimistic: the choice and the counts move at once, and move back if the
+  // write fails.
   const rsvpMutation = useMutation({
     mutationFn: async ({ eventId, status }: { eventId: string; status: string }) => {
       if (!user) throw new Error("Not authenticated");
-      // Upsert
-      const { data: existing } = await supabase
+      const { data: existing, error: readError } = await supabase
         .from('event_rsvps')
         .select('id')
         .eq('event_id', eventId)
         .eq('user_id', user.id)
         .maybeSingle();
+      if (readError) throw readError;
 
       if (existing) {
-        await supabase.from('event_rsvps').update({ status }).eq('id', existing.id);
+        const { error } = await supabase.from('event_rsvps').update({ status }).eq('id', existing.id);
+        if (error) throw error;
       } else {
-        await supabase.from('event_rsvps').insert({ event_id: eventId, user_id: user.id, status });
+        const { error } = await supabase.from('event_rsvps').insert({ event_id: eventId, user_id: user.id, status });
+        if (error) {
+          // Raced with another tab: the row exists now, so update it instead.
+          if (!isUniqueViolation(error)) throw error;
+          const { error: retryError } = await supabase
+            .from('event_rsvps')
+            .update({ status })
+            .eq('event_id', eventId)
+            .eq('user_id', user.id);
+          if (retryError) throw retryError;
+        }
       }
     },
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['events'] })
+    onMutate: async ({ eventId, status }) => {
+      await queryClient.cancelQueries({ queryKey: eventsKey });
+      const previous = queryClient.getQueryData<EventRow[]>(eventsKey);
+      if (previous) {
+        queryClient.setQueryData<EventRow[]>(eventsKey, previous.map((e) => {
+          if (e.id !== eventId || e.userRsvp === status) return e;
+          const next = { ...e, userRsvp: status };
+          if (e.userRsvp === 'going') next.goingCount = Math.max(0, next.goingCount - 1);
+          if (e.userRsvp === 'interested') next.interestedCount = Math.max(0, next.interestedCount - 1);
+          if (status === 'going') next.goingCount += 1;
+          if (status === 'interested') next.interestedCount += 1;
+          return next;
+        }));
+      }
+      return { previous };
+    },
+    onError: (e, _vars, context) => {
+      if (context?.previous) queryClient.setQueryData(eventsKey, context.previous);
+      toast({ title: friendlyDbError(e, "that did not save. try again."), variant: "destructive" });
+    },
+    onSettled: () => queryClient.invalidateQueries({ queryKey: ['events'] })
   });
 
   const titleValid = title.trim().length > 0;
@@ -187,7 +210,7 @@ const Events = () => {
         </div>
       ) : events && events.length > 0 ? (
         <div className="stagger">
-          {(events as EventRow[]).map((event, idx) => (
+          {events.map((event, idx) => (
             <div key={event.id} className="row px-5 sm:px-8 py-5" style={{ "--i": Math.min(idx, 8) } as React.CSSProperties}>
               <p className="text-[12px] font-light text-foreground/40 tabular-nums">
                 {format(new Date(event.starts_at), "EEE d MMM · HH:mm").toLowerCase()}

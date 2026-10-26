@@ -20,38 +20,39 @@ const Hero = ({ onOpenAuth }: Props) => {
     <section ref={ref} className="relative px-5 sm:px-8 pt-28 sm:pt-36 pb-16 sm:pb-24">
       <div className="max-w-6xl mx-auto grid lg:grid-cols-12 gap-12 lg:gap-10 items-start">
         <div className="lg:col-span-6 lg:pt-10">
-          <p className="reveal text-foreground/40 text-[11px] font-light tracking-[0.28em] uppercase mb-8">
-            a social space · chronological · no ads
-          </p>
+          <p className="reveal eyebrow mb-8">a private social space · est. 2024</p>
           <h1
-            className="reveal text-[clamp(2.75rem,7.2vw,5.75rem)] font-extralight text-foreground leading-[0.94] tracking-[-0.045em]"
+            className="reveal text-[clamp(2.9rem,7.4vw,6rem)] font-extralight text-foreground leading-[0.92] tracking-[-0.045em]"
             style={d(60)}
           >
             a quiet room
             <br />
-            <span className="font-thin text-foreground/70">on the internet.</span>
+            <span className="font-display italic tracking-[-0.02em] text-foreground/85 text-[1.08em]">on the internet.</span>
           </h1>
           <p className="reveal mt-8 text-[15.5px] sm:text-lg text-foreground/55 font-light max-w-md leading-relaxed" style={d(140)}>
             a chronological feed, no ads, no engagement farming. write. talk. leave when you want.
           </p>
-          <div className="reveal mt-9 flex flex-wrap items-center gap-x-6 gap-y-3" style={d(200)}>
+          <div className="reveal mt-10 flex flex-wrap items-center gap-x-6 gap-y-3" style={d(200)}>
             <Button
               onClick={() => onOpenAuth?.("signup")}
               variant="signal"
-              className="h-11 px-5 rounded-md text-[15px] font-medium group"
+              className="h-12 px-6 rounded-md text-[15px] font-medium group"
             >
-              claim your handle
+              claim your member number
               <ArrowUpRight className="w-4 h-4 transition-transform duration-200 ease-soft group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />
             </Button>
             <button
               type="button"
               onClick={() => onOpenAuth?.("login")}
-              className="text-[14px] font-light text-foreground/55 hover:text-foreground transition-colors underline-offset-4 hover:underline"
+              className="inline-flex items-center h-12 text-[14px] font-light text-foreground/55 hover:text-foreground transition-colors underline-offset-4 hover:underline"
             >
               i already have an account
             </button>
           </div>
-          <dl className="reveal mt-14 grid grid-cols-2 gap-x-6 gap-y-4 max-w-md text-[13px] font-light" style={d(280)}>
+          <p className="reveal mt-5 text-[13px] font-light text-foreground/45 max-w-md leading-relaxed" style={d(240)}>
+            every account gets a permanent number, in the order people arrive. the first 1,000 are founding members.
+          </p>
+          <dl className="reveal mt-12 grid grid-cols-2 gap-x-6 gap-y-4 max-w-md text-[13px] font-light" style={d(280)}>
             {[
               ["feed", "newest first. never reordered."],
               ["ads", "none. no boosted posts."],
@@ -59,7 +60,7 @@ const Hero = ({ onOpenAuth }: Props) => {
               ["leaving", "export and delete, anytime."],
             ].map(([k, v]) => (
               <div key={k} className="border-t border-foreground/10 pt-3">
-                <dt className="text-foreground/40 uppercase tracking-[0.2em] text-[10px]">{k}</dt>
+                <dt className="eyebrow">{k}</dt>
                 <dd className="text-foreground/75 mt-1">{v}</dd>
               </div>
             ))}
@@ -91,16 +92,16 @@ const Manifesto = () => {
     <section ref={ref} id="how-it-works" className="py-24 sm:py-32 px-5 sm:px-8">
       <div className="max-w-6xl mx-auto">
         <div className="reveal mb-12 sm:mb-16 max-w-2xl">
-          <p className="text-foreground/40 text-[11px] font-light tracking-[0.28em] uppercase mb-5">three rules</p>
-          <h2 className="text-4xl sm:text-5xl font-extralight text-foreground leading-[1.02] tracking-[-0.035em]">
-            what we will <span className="text-foreground/45">try to keep.</span>
+          <p className="eyebrow mb-5">three rules</p>
+          <h2 className="text-4xl sm:text-6xl font-extralight text-foreground leading-[1.0] tracking-[-0.04em]">
+            what we <span className="font-display italic tracking-[-0.015em] text-foreground/80">promise</span> to keep.
           </h2>
         </div>
         <div>
           {lines.map((line, i) => (
-            <div key={line.n} className="reveal grid grid-cols-12 gap-6 py-8 sm:py-10 border-t border-foreground/10" style={d(i * 80)}>
-              <div className="col-span-2 md:col-span-1"><span className="text-foreground/30 text-xs font-light tracking-[0.2em]">{line.n}</span></div>
-              <div className="col-span-10 md:col-span-5"><h3 className="text-2xl md:text-[1.75rem] font-extralight text-foreground tracking-[-0.02em]">{line.t}</h3></div>
+            <div key={line.n} className="reveal grid grid-cols-12 gap-6 py-9 sm:py-11 border-t border-foreground/10" style={d(i * 80)}>
+              <div className="col-span-2 md:col-span-1"><span className="font-display text-[1.6rem] leading-none text-foreground/35 num">{line.n}</span></div>
+              <div className="col-span-10 md:col-span-5"><h3 className="font-display text-[1.9rem] md:text-[2.2rem] leading-[1.05] text-foreground">{line.t}</h3></div>
               <div className="col-span-12 md:col-span-6 md:pl-2"><p className="text-foreground/55 font-light leading-relaxed text-[15px] max-w-lg">{line.d}</p></div>
             </div>
           ))}
@@ -126,13 +127,15 @@ const Inventory = () => {
     <section ref={ref} className="py-20 sm:py-28 px-5 sm:px-8">
       <div className="max-w-6xl mx-auto">
         <div className="reveal mb-10 flex items-end justify-between flex-wrap gap-6">
-          <h2 className="text-3xl sm:text-5xl font-extralight text-foreground tracking-[-0.03em] max-w-xl leading-[1.05]">what is in the room.</h2>
+          <h2 className="text-3xl sm:text-5xl font-extralight text-foreground tracking-[-0.035em] max-w-xl leading-[1.02]">
+            what is <span className="font-display italic tracking-[-0.015em] text-foreground/80">in</span> the room.
+          </h2>
           <p className="text-foreground/45 text-sm font-light max-w-xs">nothing here is a preview or a plan. it is what you get when you sign in.</p>
         </div>
         <dl className="grid sm:grid-cols-2 lg:grid-cols-3 border-t border-l border-foreground/10">
           {items.map(([k, v], i) => (
             <div key={k} className="reveal border-b border-r border-foreground/10 p-6 sm:p-7 min-h-[140px] flex flex-col justify-between" style={d(i * 50)}>
-              <dt className="text-[11px] font-light tracking-[0.24em] uppercase text-foreground/45">{k}</dt>
+              <dt className="eyebrow">{k}</dt>
               <dd className="text-foreground/80 font-light text-[15px] leading-relaxed mt-5">{v}</dd>
             </div>
           ))}
@@ -148,14 +151,15 @@ const FinalCTA = ({ onOpenAuth }: Props) => {
   return (
     <section ref={ref} className="py-24 sm:py-36 px-5 sm:px-8">
       <div className="reveal max-w-6xl mx-auto">
-        <h2 className="text-4xl sm:text-6xl md:text-7xl font-extralight text-foreground leading-[0.98] tracking-[-0.045em] mb-8">
+        <hr className="rule-lit mb-16 sm:mb-24" />
+        <h2 className="text-4xl sm:text-6xl md:text-7xl font-extralight text-foreground leading-[0.96] tracking-[-0.045em] mb-8">
           come write.
           <br />
-          <span className="text-foreground/45">leave when you want.</span>
+          <span className="font-display italic tracking-[-0.015em] text-foreground/70">leave when you want.</span>
         </h2>
-        <p className="text-foreground/55 font-light text-base sm:text-lg max-w-lg mb-9">free to join. no credit card. your account, your export, your delete.</p>
-        <Button onClick={() => onOpenAuth?.("signup")} variant="signal" className="h-11 px-6 rounded-md text-[15px] font-medium group">
-          create your account
+        <p className="text-foreground/55 font-light text-base sm:text-lg max-w-lg mb-10">free to join. no credit card. your number, your words, your export, your delete.</p>
+        <Button onClick={() => onOpenAuth?.("signup")} variant="signal" className="h-12 px-7 rounded-md text-[15px] font-medium group">
+          take your number
           <ArrowUpRight className="w-4 h-4 transition-transform duration-200 ease-soft group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />
         </Button>
       </div>

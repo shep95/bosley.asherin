@@ -1,57 +1,81 @@
+import { useMemo } from "react";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
-import { useQuery } from "@tanstack/react-query";
+import { useInfiniteQuery } from "@tanstack/react-query";
 import UserAvatar from "@/components/UserAvatar";
 import EmptyState from "@/components/ui/empty-state";
+import LoadMoreButton from "@/components/LoadMoreButton";
 import { Link } from "react-router-dom";
+
+const PAGE = 50;
+
+type ViewerProfile = { user_id: string; username: string; display_name: string | null; avatar_url: string | null };
+type ViewsPage = {
+  views: { viewer_user_id: string; viewed_at: string }[];
+  profiles: ViewerProfile[];
+  nextCursor: string | null;
+};
 
 /** Who opened your profile in the last 30 days. Rows; no box, no counter badge. */
 const ProfileViewers = () => {
   const { user } = useAuth();
 
-  const { data: viewers, isLoading } = useQuery({
+  // 50 view rows per page, newest first, continued by viewed_at.
+  const viewsQuery = useInfiniteQuery({
     queryKey: ['profile-viewers', user?.id],
-    queryFn: async () => {
-      if (!user) return [];
-
-      // Get unique viewers from the last 30 days
+    queryFn: async ({ pageParam }): Promise<ViewsPage> => {
       const thirtyDaysAgo = new Date();
       thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
 
-      const { data: views } = await supabase
+      let query = supabase
         .from('profile_views')
         .select('viewer_user_id, viewed_at')
-        .eq('profile_user_id', user.id)
+        .eq('profile_user_id', user!.id)
         .gte('viewed_at', thirtyDaysAgo.toISOString())
-        .order('viewed_at', { ascending: false });
+        .order('viewed_at', { ascending: false })
+        .limit(PAGE);
+      if (pageParam) query = query.lt('viewed_at', pageParam);
+      const { data: views, error } = await query;
+      if (error) throw error;
+      const rows = views ?? [];
 
-      if (!views || views.length === 0) return [];
-
-      // Get unique viewers (most recent view per user)
-      const uniqueViewers = new Map<string, string>();
-      views.forEach(v => {
-        if (!uniqueViewers.has(v.viewer_user_id)) {
-          uniqueViewers.set(v.viewer_user_id, v.viewed_at);
-        }
-      });
-
-      // Fetch profiles
-      const viewerIds = Array.from(uniqueViewers.keys());
-      const { data: profiles } = await supabase
-        .from('profiles')
-        .select('user_id, username, display_name, avatar_url')
-        .in('user_id', viewerIds);
-
-      const profilesMap = new Map(profiles?.map(p => [p.user_id, p]) || []);
-
-      return Array.from(uniqueViewers.entries()).map(([userId, viewedAt]) => ({
-        userId,
-        viewedAt,
-        profile: profilesMap.get(userId)
-      })).slice(0, 20); // Limit to 20 most recent
+      const ids = [...new Set(rows.map((v) => v.viewer_user_id))];
+      let profiles: ViewerProfile[] = [];
+      if (ids.length > 0) {
+        const { data, error: profilesError } = await supabase
+          .from('profiles')
+          .select('user_id, username, display_name, avatar_url')
+          .in('user_id', ids);
+        if (profilesError) throw profilesError;
+        profiles = data ?? [];
+      }
+      return {
+        views: rows,
+        profiles,
+        nextCursor: rows.length === PAGE ? rows[rows.length - 1].viewed_at : null,
+      };
     },
+    initialPageParam: null as string | null,
+    getNextPageParam: (last) => last.nextCursor,
     enabled: !!user
   });
+  const isLoading = viewsQuery.isLoading;
+
+  // One row per visitor, at their most recent visit, across every loaded page.
+  const viewers = useMemo(() => {
+    const pages = viewsQuery.data?.pages ?? [];
+    const profiles = new Map<string, ViewerProfile>();
+    for (const page of pages) for (const p of page.profiles) profiles.set(p.user_id, p);
+    const seen = new Map<string, string>();
+    for (const page of pages) {
+      for (const v of page.views) if (!seen.has(v.viewer_user_id)) seen.set(v.viewer_user_id, v.viewed_at);
+    }
+    return Array.from(seen.entries()).map(([userId, viewedAt]) => ({
+      userId,
+      viewedAt,
+      profile: profiles.get(userId),
+    }));
+  }, [viewsQuery.data]);
 
   const formatDate = (dateString: string) => {
     const date = new Date(dateString);
@@ -109,6 +133,11 @@ const ProfileViewers = () => {
           </Link>
         ))}
       </div>
+      <LoadMoreButton
+        hasMore={viewsQuery.hasNextPage}
+        loading={viewsQuery.isFetchingNextPage}
+        onClick={() => { void viewsQuery.fetchNextPage(); }}
+      />
     </div>
   );
 };

@@ -1,5 +1,5 @@
 import PublicShell from "@/components/landing/PublicShell";
-import { Helmet } from "react-helmet-async";
+import { Helmet } from "@/components/Head";
 
 const PrivacyPolicy = () => {
   return (
@@ -7,13 +7,13 @@ const PrivacyPolicy = () => {
       <Helmet>
         <title>Privacy Policy — Bosley</title>
         <meta name="description" content="How Bosley collects, uses, and protects your data. We don't sell your information — read our full privacy policy." />
-        <link rel="canonical" href="https://bosley.app/privacy" />
-        <meta property="og:url" content="https://bosley.app/privacy" />
+        <link rel="canonical" href="https://bosley.asherin.com/privacy" />
+        <meta property="og:url" content="https://bosley.asherin.com/privacy" />
         <meta property="og:title" content="Privacy Policy — Bosley" />
         <meta property="og:description" content="How Bosley collects, uses, and protects your data." />
       </Helmet>
 <article className="doc">
-              <h1 className="text-[2.25rem] sm:text-[2.75rem] font-extralight lowercase tracking-[-0.035em] text-foreground mb-3">privacy policy</h1>
+              <h1 className="font-display text-[2.6rem] sm:text-[3.2rem] lowercase leading-[0.95] text-foreground mb-4">privacy policy</h1>
               <p className="text-[13px] font-light text-foreground/45 mb-12">last updated september 2026 · zorak corp</p>
               
               <div className="space-y-10 text-foreground/75 font-light text-[15.5px]">

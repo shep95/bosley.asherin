@@ -8,8 +8,10 @@ import { Button } from "@/components/ui/button";
 import { Loader2, Search } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import PageHeader from "@/components/layout/PageHeader";
+import { useDebouncedValue, escapeLike } from "@/lib/useDebouncedValue";
+import { friendlyDbError, isUniqueViolation } from "@/lib/dbErrors";
 
-type Community = { id: string; name: string; slug?: string; description: string | null; is_private: boolean; member_count: number };
+type Community = { id: string; name: string; slug?: string; description: string | null; is_private: boolean; member_count: number; created_by?: string | null };
 
 const CommunityRow = ({ c, idx, action }: { c: Community; idx: number; action?: React.ReactNode }) => (
   <div className="row px-5 sm:px-8 py-5 flex items-start justify-between gap-4" style={{ "--i": Math.min(idx, 8) } as React.CSSProperties}>
@@ -46,23 +48,27 @@ const Communities = () => {
   const [searchQuery, setSearchQuery] = useState("");
   const [tab, setTab] = useState("my");
   const [touched, setTouched] = useState(false);
+  const debouncedSearch = useDebouncedValue(searchQuery.trim(), 300);
 
   // My communities
   const { data: myCommunities, isLoading } = useQuery({
     queryKey: ['my-communities', user?.id],
     queryFn: async () => {
       if (!user) return [];
-      const { data: memberships } = await supabase
+      const { data: memberships, error: membershipsError } = await supabase
         .from('community_members')
         .select('community_id')
-        .eq('user_id', user.id);
+        .eq('user_id', user.id)
+        .limit(200);
+      if (membershipsError) throw membershipsError;
       if (!memberships?.length) return [];
       const ids = memberships.map(m => m.community_id);
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from('communities')
         .select('*')
         .in('id', ids)
         .order('created_at', { ascending: false });
+      if (error) throw error;
       return data || [];
     },
     enabled: !!user
@@ -70,15 +76,31 @@ const Communities = () => {
 
   // Discover communities
   const { data: discoverCommunities, isLoading: discoverLoading } = useQuery({
-    queryKey: ['discover-communities', searchQuery],
+    queryKey: ['discover-communities', debouncedSearch],
     queryFn: async () => {
-      let query = supabase.from('communities').select('*').eq('is_private', false).order('member_count', { ascending: false }).limit(20);
-      if (searchQuery.trim()) {
-        query = query.or(`name.ilike.%${searchQuery}%,description.ilike.%${searchQuery}%`);
+      const base = () =>
+        supabase.from('communities').select('*').eq('is_private', false).order('member_count', { ascending: false }).limit(20);
+      const term = escapeLike(debouncedSearch);
+      if (!term) {
+        const { data, error } = await base();
+        if (error) throw error;
+        return data || [];
       }
-      const { data } = await query;
-      return data || [];
-    }
+      // Two plain ilike filters instead of interpolating raw input into
+      // .or(), where commas and parentheses would change the filter itself.
+      const pattern = `%${term}%`;
+      const [byName, byDescription] = await Promise.all([
+        base().ilike('name', pattern),
+        base().ilike('description', pattern),
+      ]);
+      if (byName.error) throw byName.error;
+      if (byDescription.error) throw byDescription.error;
+      const merged = new Map<string, Community>();
+      for (const c of [...(byName.data ?? []), ...(byDescription.data ?? [])]) merged.set(c.id, c);
+      return [...merged.values()].sort((a, b) => b.member_count - a.member_count).slice(0, 20);
+    },
+    // Keep the last results on screen while the next search loads.
+    placeholderData: (prev) => prev
   });
 
   const createCommunity = useMutation({
@@ -91,12 +113,13 @@ const Communities = () => {
         created_by: user.id,
       }).select().single();
       if (error) throw error;
-      // Add creator as owner
-      await supabase.from('community_members').insert({
+      // Add creator as owner (allowed only because they created it).
+      const { error: ownerError } = await supabase.from('community_members').insert({
         community_id: community.id,
         user_id: user.id,
         role: 'owner',
       });
+      if (ownerError && !isUniqueViolation(ownerError)) throw ownerError;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['my-communities'] });
@@ -106,22 +129,48 @@ const Communities = () => {
       setTouched(false);
       toast({ title: "community created" });
     },
-    onError: (e: Error) => toast({ title: "could not create it", description: e.message, variant: "destructive" })
+    onError: (e) => toast({
+      title: isUniqueViolation(e) ? "that address is taken. try another." : friendlyDbError(e, "could not create it. try again."),
+      variant: "destructive",
+    })
   });
 
   const joinCommunity = useMutation({
     mutationFn: async (communityId: string) => {
       if (!user) throw new Error("Not authenticated");
-      await supabase.from('community_members').insert({
+      // The database only accepts role 'member' for a join.
+      const { error } = await supabase.from('community_members').insert({
         community_id: communityId,
         user_id: user.id,
         role: 'member',
       });
+      // Already a member (double tap, another tab): the end state is right.
+      if (error && !isUniqueViolation(error)) throw error;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['my-communities'] });
+      queryClient.invalidateQueries({ queryKey: ['discover-communities'] });
       toast({ title: "joined" });
-    }
+    },
+    onError: (e) => toast({ title: friendlyDbError(e, "could not join. try again."), variant: "destructive" }),
+  });
+
+  const leaveCommunity = useMutation({
+    mutationFn: async (communityId: string) => {
+      if (!user) throw new Error("Not authenticated");
+      const { error } = await supabase
+        .from('community_members')
+        .delete()
+        .eq('community_id', communityId)
+        .eq('user_id', user.id);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['my-communities'] });
+      queryClient.invalidateQueries({ queryKey: ['discover-communities'] });
+      toast({ title: "left" });
+    },
+    onError: (e) => toast({ title: friendlyDbError(e, "could not leave. try again."), variant: "destructive" }),
   });
 
   const myIds = new Set(myCommunities?.map(c => c.id) || []);
@@ -209,7 +258,26 @@ const Communities = () => {
           <RowSkeleton />
         ) : myCommunities && myCommunities.length > 0 ? (
           <div className="stagger">
-            {myCommunities.map((c, idx) => <CommunityRow key={c.id} c={c} idx={idx} />)}
+            {myCommunities.map((c, idx) => (
+              <CommunityRow
+                key={c.id}
+                c={c}
+                idx={idx}
+                action={
+                  c.created_by === user?.id ? (
+                    <span className="text-[13px] font-light text-foreground/40 h-10 inline-flex items-center shrink-0">yours</span>
+                  ) : (
+                    <button
+                      onClick={() => leaveCommunity.mutate(c.id)}
+                      disabled={leaveCommunity.isPending}
+                      className="quiet text-[13px] h-10 px-2 -mr-2 rounded-md shrink-0 disabled:opacity-50"
+                    >
+                      leave
+                    </button>
+                  )
+                }
+              />
+            ))}
           </div>
         ) : (
           <EmptyState
@@ -263,8 +331,8 @@ const Communities = () => {
             </div>
           ) : (
             <EmptyState
-              title={searchQuery ? "nothing by that name." : "no open communities yet."}
-              description={searchQuery ? `no community matches "${searchQuery}". start it, and it is yours.` : "be the first to start one."}
+              title={debouncedSearch ? "nothing by that name." : "no open communities yet."}
+              description={debouncedSearch ? `no community matches "${debouncedSearch}". start it, and it is yours.` : "be the first to start one."}
               actionLabel="start one"
               onAction={() => setDialogOpen(true)}
             />

@@ -9,6 +9,9 @@ import EmptyState from "@/components/ui/empty-state";
 
 type TopPost = { id: string; content: string; created_at: string; likes: number; comments: number; engagement: number };
 
+/** Likes, replies, timing and top posts are computed over this many latest posts. */
+const SAMPLE = 200;
+
 const Analytics = () => {
   const { user } = useAuth();
 
@@ -18,30 +21,45 @@ const Analytics = () => {
     queryFn: async () => {
       if (!user) return null;
 
-      // Get all user posts
-      const { data: posts } = await supabase
-        .from('posts')
-        .select('id, created_at, content')
-        .eq('user_id', user.id)
-        .order('created_at', { ascending: false });
+      // Totals come from the latest SAMPLE posts only: counts per post come
+      // from get_post_stats (one call, no like/comment rows downloaded).
+      const [postsRes, totalRes, followersRes, followingRes] = await Promise.all([
+        supabase
+          .from('posts')
+          .select('id, created_at, content')
+          .eq('user_id', user.id)
+          .order('created_at', { ascending: false })
+          .limit(SAMPLE),
+        supabase
+          .from('posts')
+          .select('*', { count: 'exact', head: true })
+          .eq('user_id', user.id),
+        supabase
+          .from('follows')
+          .select('*', { count: 'exact', head: true })
+          .eq('following_id', user.id),
+        supabase
+          .from('follows')
+          .select('*', { count: 'exact', head: true })
+          .eq('follower_id', user.id),
+      ]);
+      if (postsRes.error) throw postsRes.error;
+      if (totalRes.error) throw totalRes.error;
+      if (followersRes.error) throw followersRes.error;
+      if (followingRes.error) throw followingRes.error;
 
-      if (!posts || posts.length === 0) {
-        // Followers exist independently of posts, so still resolve them.
-        const { count: followersOnly } = await supabase
-          .from('follows')
-          .select('*', { count: 'exact', head: true })
-          .eq('following_id', user.id);
-        const { count: followingOnly } = await supabase
-          .from('follows')
-          .select('*', { count: 'exact', head: true })
-          .eq('follower_id', user.id);
+      const posts = postsRes.data ?? [];
+      const followers = followersRes.count ?? 0;
+      const following = followingRes.count ?? 0;
+
+      if (posts.length === 0) {
         // Same shape as the populated branch — a partial object renders blanks.
         return {
-          totalPosts: 0,
+          totalPosts: totalRes.count ?? 0,
           totalLikes: 0,
           totalComments: 0,
-          followers: followersOnly || 0,
-          following: followingOnly || 0,
+          followers,
+          following,
           topPosts: [] as TopPost[],
           bestDay: '—',
           bestHour: '—',
@@ -49,45 +67,20 @@ const Analytics = () => {
         };
       }
 
-      const postIds = posts.map(p => p.id);
+      const { data: statRows, error: statsError } = await supabase.rpc('get_post_stats', {
+        post_ids: posts.map(p => p.id),
+      });
+      if (statsError) throw statsError;
+      const statsMap = new Map((statRows ?? []).map(r => [r.post_id, r]));
 
-      // Get likes
-      const { data: likes } = await supabase
-        .from('post_likes')
-        .select('post_id')
-        .in('post_id', postIds);
-
-      // Get comments
-      const { data: comments } = await supabase
-        .from('comments')
-        .select('post_id')
-        .in('post_id', postIds);
-
-      // Get followers
-      const { count: followers } = await supabase
-        .from('follows')
-        .select('*', { count: 'exact', head: true })
-        .eq('following_id', user.id);
-
-      // Get following
-      const { count: following } = await supabase
-        .from('follows')
-        .select('*', { count: 'exact', head: true })
-        .eq('follower_id', user.id);
-
-      // Aggregate per post
-      const likesMap = new Map<string, number>();
-      likes?.forEach(l => likesMap.set(l.post_id, (likesMap.get(l.post_id) || 0) + 1));
-
-      const commentsMap = new Map<string, number>();
-      comments?.forEach(c => commentsMap.set(c.post_id, (commentsMap.get(c.post_id) || 0) + 1));
-
-      const postsWithStats: TopPost[] = posts.map(p => ({
-        ...p,
-        likes: likesMap.get(p.id) || 0,
-        comments: commentsMap.get(p.id) || 0,
-        engagement: (likesMap.get(p.id) || 0) + (commentsMap.get(p.id) || 0),
-      }));
+      const postsWithStats: TopPost[] = posts.map(p => {
+        const st = statsMap.get(p.id);
+        const likes = Number(st?.likes_count) || 0;
+        const comments = Number(st?.comments_count) || 0;
+        return { ...p, likes, comments, engagement: likes + comments };
+      });
+      const totalLikes = postsWithStats.reduce((sum, p) => sum + p.likes, 0);
+      const totalComments = postsWithStats.reduce((sum, p) => sum + p.comments, 0);
 
       const topPosts = [...postsWithStats].sort((a, b) => b.engagement - a.engagement).slice(0, 5);
 
@@ -106,11 +99,11 @@ const Analytics = () => {
       const bestHour = hourDistribution.indexOf(Math.max(...hourDistribution));
 
       return {
-        totalPosts: posts.length,
-        totalLikes: likes?.length || 0,
-        totalComments: comments?.length || 0,
-        followers: followers || 0,
-        following: following || 0,
+        totalPosts: totalRes.count ?? posts.length,
+        totalLikes,
+        totalComments,
+        followers,
+        following,
         topPosts,
         bestDay,
         bestHour: `${String(bestHour).padStart(2, '0')}:00`,
@@ -157,6 +150,11 @@ const Analytics = () => {
               <Line label="you post most on" value={stats.bestDay} />
               <Line label="usually around" value={stats.bestHour} />
             </div>
+            {stats.totalPosts > 0 && (
+              <p className="mt-3 text-[12px] font-light text-foreground/40">
+                likes, replies, timing and top posts count your last {SAMPLE} posts.
+              </p>
+            )}
           </section>
 
           <section className="pb-6">

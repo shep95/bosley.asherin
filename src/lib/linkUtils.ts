@@ -30,19 +30,35 @@ const SCAM_PATTERNS = [
 ];
 
 /**
- * Check if a URL contains a blocked domain
+ * True when `hostname` is `label` or a subdomain of it, or when one of its
+ * dot-separated labels is a blocked name ("pornhub" blocks pornhub.com and
+ * www.pornhub.org, but not notpornhub-review.example). Matching is on whole
+ * labels, never substrings, so innocent hosts that merely contain a blocked
+ * word are not caught.
+ */
+function hostMatches(hostname: string, blocked: string): boolean {
+  if (blocked.includes('.')) {
+    return hostname === blocked || hostname.endsWith('.' + blocked);
+  }
+  return hostname.split('.').includes(blocked);
+}
+
+/**
+ * Check if a URL points at a blocked domain
  */
 export function isBlockedLink(url: string): boolean {
   // Match against the hostname only so legitimate URLs that merely mention a
   // blocked word in their path/query (e.g. a news article) are not blocked.
+  let hostname: string;
   try {
-    const hostname = new URL(url).hostname.toLowerCase();
-    return BLOCKED_DOMAINS.some(domain => hostname.includes(domain));
+    hostname = new URL(url).hostname.toLowerCase();
   } catch {
-    // Malformed/relative URL: fall back to substring match to stay safe.
-    const lowerUrl = url.toLowerCase();
-    return BLOCKED_DOMAINS.some(domain => lowerUrl.includes(domain));
+    // Malformed/relative URL: take whatever sits where a host would be.
+    hostname = url.toLowerCase().replace(/^[a-z][a-z0-9+.-]*:\/\//, '').split(/[/?#:]/)[0] ?? '';
   }
+  hostname = hostname.replace(/\.$/, '');
+  if (!hostname) return false;
+  return BLOCKED_DOMAINS.some(domain => hostMatches(hostname, domain));
 }
 
 /**
@@ -80,7 +96,34 @@ export function isPostAllowedInFeed(content: string, mediaUrls?: string[]): bool
  */
 export function extractUrls(text: string): string[] {
   const urlRegex = /(https?:\/\/[^\s<>"{}|\\^`[\]]+)/gi;
-  return text.match(urlRegex) || [];
+  return (text.match(urlRegex) || []).map(trimTrailingPunctuation).filter(Boolean);
+}
+
+/**
+ * Sentence punctuation directly after a URL ("see https://x.com/a)." or
+ * "https://x.com!") is not part of the link. A closing parenthesis is kept
+ * only when the URL itself opened one (e.g. Wikipedia's "Foo_(bar)").
+ */
+export function trimTrailingPunctuation(url: string): string {
+  let out = url;
+  while (out.length > 0) {
+    const last = out[out.length - 1];
+    if (last === ')') {
+      const opens = (out.match(/\(/g) || []).length;
+      const closes = (out.match(/\)/g) || []).length;
+      if (closes > opens) {
+        out = out.slice(0, -1);
+        continue;
+      }
+      break;
+    }
+    if ('.,!?;:\'"'.includes(last)) {
+      out = out.slice(0, -1);
+      continue;
+    }
+    break;
+  }
+  return out;
 }
 
 /**
@@ -136,6 +179,10 @@ export function parseContentWithLinks(content: string): ParsedTextPart[] {
   let match;
   
   while ((match = urlRegex.exec(content)) !== null) {
+    const url = trimTrailingPunctuation(match[0]);
+    // Nothing left but "https://" plus punctuation: leave it as plain text.
+    if (!/^https?:\/\/[^/]/i.test(url)) continue;
+
     // Add text before the URL
     if (match.index > lastIndex) {
       parts.push({
@@ -143,20 +190,18 @@ export function parseContentWithLinks(content: string): ParsedTextPart[] {
         content: content.slice(lastIndex, match.index)
       });
     }
-    
-    const url = match[0];
-    const isBlocked = isBlockedLink(url);
-    
+
     parts.push({
       type: 'link',
       content: shortenUrl(url),
       href: url,
-      isBlocked
+      isBlocked: isBlockedLink(url)
     });
-    
+
+    // Trimmed punctuation stays in the text that follows.
     lastIndex = match.index + url.length;
   }
-  
+
   // Add remaining text
   if (lastIndex < content.length) {
     parts.push({

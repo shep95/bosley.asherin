@@ -17,7 +17,7 @@ import { next } from "@vercel/functions";
 
 export const config = {
   // Skip static assets: they are content-hashed and harmless to fetch.
-  matcher: ["/((?!assets/|favicon|og-image|manifest|sw\\.js|workbox-|robots\\.txt|sitemap\\.xml|llms\\.txt|\\.well-known/).*)"],
+  matcher: ["/((?!assets/|favicon|apple-touch-icon|icon-maskable|og-image|manifest|sw\\.js|workbox-|robots\\.txt|sitemap\\.xml|llms\\.txt|\\.well-known/).*)"],
 };
 
 const BLOCKED_UA = [

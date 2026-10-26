@@ -11,7 +11,12 @@ import { Link } from "react-router-dom";
 import { useToast } from "@/hooks/use-toast";
 import PageHeader from "@/components/layout/PageHeader";
 import EmptyState from "@/components/ui/empty-state";
-import { escapeFilterValue } from "@/lib/sanitize";
+import { escapeLikeValue, peopleSearchTerm } from "@/lib/sanitize";
+import { enrichPosts } from "@/lib/postFeed";
+import { useDebouncedValue } from "@/hooks/useDebouncedValue";
+import { friendlyDbError } from "@/lib/dbErrors";
+
+type Person = { user_id: string; username: string; display_name: string | null; avatar_url: string | null; bio?: string | null; isFollowing?: boolean };
 
 const Explore = () => {
   const [selectedTopic, setSelectedTopic] = useState<string | null>(null);
@@ -31,8 +36,8 @@ const Explore = () => {
   });
 
   // Fetch posts by topic
-  const { data: posts, isLoading } = useQuery({
-    queryKey: ['explore-posts', selectedTopic],
+  const { data: posts, isLoading, isError: postsError, refetch: refetchPosts } = useQuery({
+    queryKey: ['explore-posts', user?.id, selectedTopic],
     queryFn: async () => {
       let query = supabase
         .from('posts')
@@ -48,123 +53,83 @@ const Explore = () => {
       const { data: postsData, error } = await query;
       if (error) throw error;
 
-      // Fetch profiles
-      const userIds = [...new Set(postsData?.map(p => p.user_id) || [])];
-      const { data: profilesData } = await supabase
-        .from('profiles')
-        .select('user_id, username, display_name, avatar_url')
-        .in('user_id', userIds);
-
-      const profilesMap = new Map(profilesData?.map(p => [p.user_id, p]) || []);
-
-      // Fetch likes counts
-      const postIds = postsData?.map(p => p.id) || [];
-      const { data: likesData } = await supabase
-        .from('post_likes')
-        .select('post_id')
-        .in('post_id', postIds);
-
-      const likesCountMap = new Map<string, number>();
-      likesData?.forEach(l => {
-        likesCountMap.set(l.post_id, (likesCountMap.get(l.post_id) || 0) + 1);
-      });
-
-      // Check user interactions
-      const { data: userLikes } = user ? await supabase
-        .from('post_likes')
-        .select('post_id')
-        .eq('user_id', user.id)
-        .in('post_id', postIds) : { data: [] };
-
-      const userLikedSet = new Set(userLikes?.map(l => l.post_id) || []);
-
-      const { data: userBookmarks } = user ? await supabase
-        .from('bookmarks')
-        .select('post_id')
-        .eq('user_id', user.id)
-        .in('post_id', postIds) : { data: [] };
-
-      const userBookmarkedSet = new Set(userBookmarks?.map(b => b.post_id) || []);
-
-      const { data: commentsData } = await supabase
-        .from('comments')
-        .select('post_id')
-        .in('post_id', postIds);
-
-      const commentsCountMap = new Map<string, number>();
-      commentsData?.forEach(c => {
-        commentsCountMap.set(c.post_id, (commentsCountMap.get(c.post_id) || 0) + 1);
-      });
-
-      return postsData?.map(post => ({
-        ...post,
-        profiles: profilesMap.get(post.user_id) || null,
-        likesCount: likesCountMap.get(post.id) || 0,
-        commentsCount: commentsCountMap.get(post.id) || 0,
-        isLiked: userLikedSet.has(post.id),
-        isBookmarked: userBookmarkedSet.has(post.id),
-      })) || [];
+      // Counts, the viewer's own state, authors, polls and quotes: one
+      // parallel round (get_post_stats) instead of downloading every row.
+      return enrichPosts(postsData ?? [], user?.id);
     },
-    enabled: activeTab === "posts"
+    enabled: activeTab === "posts" && !!user
   });
+
+  // People search waits for typing to pause.
+  const debouncedSearch = useDebouncedValue(searchQuery, 300);
+  const peopleTerm = peopleSearchTerm(debouncedSearch);
+  const searchKey = ['search-users', user?.id, peopleTerm] as const;
 
   // Search users
   const { data: searchResults, isLoading: searchLoading } = useQuery({
-    queryKey: ['search-users', searchQuery],
-    queryFn: async () => {
-      const term = escapeFilterValue(searchQuery);
+    queryKey: searchKey,
+    queryFn: async (): Promise<Person[]> => {
+      const term = escapeLikeValue(peopleTerm);
       if (!term) return [];
 
-      const { data } = await supabase
-        .from('profiles')
-        .select('user_id, username, display_name, avatar_url, bio')
-        .or(`username.ilike.%${term}%,display_name.ilike.%${term}%`)
-        .limit(20);
+      // Two single-column filters instead of one .or(): no filter grammar to
+      // escape, and LIKE wildcards in the term are matched literally.
+      const pattern = `%${term}%`;
+      const [byUsername, byName] = await Promise.all([
+        supabase.from('profiles').select('user_id, username, display_name, avatar_url, bio').ilike('username', pattern).limit(20),
+        supabase.from('profiles').select('user_id, username, display_name, avatar_url, bio').ilike('display_name', pattern).limit(20),
+      ]);
+      if (byUsername.error) throw byUsername.error;
+      if (byName.error) throw byName.error;
+      const seen = new Set<string>();
+      const data = [...(byUsername.data ?? []), ...(byName.data ?? [])]
+        .filter((p) => (seen.has(p.user_id) ? false : (seen.add(p.user_id), true)))
+        .slice(0, 20);
 
-      if (!data || !user) return data || [];
+      if (!user || data.length === 0) return data;
 
       // Check which users we're following
-      const userIds = data.map(p => p.user_id);
-      const { data: followData } = await supabase
+      const { data: followData, error } = await supabase
         .from('follows')
         .select('following_id')
         .eq('follower_id', user.id)
-        .in('following_id', userIds);
+        .in('following_id', data.map(p => p.user_id));
+      if (error) throw error;
 
       const followingSet = new Set(followData?.map(f => f.following_id) || []);
-
-      return data.map(profile => ({
-        ...profile,
-        isFollowing: followingSet.has(profile.user_id)
-      }));
+      return data.map(profile => ({ ...profile, isFollowing: followingSet.has(profile.user_id) }));
     },
-    enabled: activeTab === "users" && searchQuery.length > 0
+    enabled: activeTab === "users" && peopleTerm.length > 0
   });
 
-  // Follow mutation
+  // Follow / unfollow: flip the row at once, put it back if the write fails.
   const followMutation = useMutation({
     mutationFn: async ({ userId, isFollowing }: { userId: string; isFollowing: boolean }) => {
       if (!user) throw new Error("Not authenticated");
-
-      if (isFollowing) {
-        await supabase
-          .from('follows')
-          .delete()
-          .eq('follower_id', user.id)
-          .eq('following_id', userId);
-      } else {
-        await supabase
-          .from('follows')
-          .insert({ follower_id: user.id, following_id: userId });
+      const { error } = isFollowing
+        ? await supabase.from('follows').delete().eq('follower_id', user.id).eq('following_id', userId)
+        : await supabase.from('follows').insert({ follower_id: user.id, following_id: userId });
+      if (error && !(error.code === '23505' && !isFollowing)) throw error;
+    },
+    onMutate: async ({ userId, isFollowing }) => {
+      await queryClient.cancelQueries({ queryKey: searchKey });
+      const previous = queryClient.getQueryData<Person[]>(searchKey);
+      queryClient.setQueryData<Person[]>(searchKey, (rows) =>
+        rows?.map((p) => (p.user_id === userId ? { ...p, isFollowing: !isFollowing } : p)),
+      );
+      return { previous };
+    },
+    onError: (error, _vars, context) => {
+      if (context?.previous) queryClient.setQueryData(searchKey, context.previous);
+      toast({ title: friendlyDbError(error, "could not update. try again."), variant: "destructive" });
+    },
+    onSettled: () => {
+      // The following feed and the person's profile both cache this.
+      for (const root of ['following-ids', 'posts', 'is-following', 'follow-stats']) {
+        queryClient.invalidateQueries({ queryKey: [root] });
       }
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['search-users'] });
-      toast({ title: "Updated" });
-    }
   });
-
-  type Person = { user_id: string; username: string; display_name: string | null; avatar_url: string | null; bio?: string | null; isFollowing?: boolean };
 
   return (
     <DashboardLayout>
@@ -211,6 +176,13 @@ const Explore = () => {
 
           {isLoading ? (
             <FeedSkeleton count={4} />
+          ) : postsError && !posts ? (
+            <EmptyState
+              title="explore did not load."
+              description="check your connection and try again."
+              actionLabel="try again"
+              onAction={() => refetchPosts()}
+            />
           ) : posts && posts.length > 0 ? (
             <div className="stagger">
               {posts.map((post, idx) => (
@@ -219,8 +191,12 @@ const Explore = () => {
                     post={post}
                     likesCount={post.likesCount}
                     commentsCount={post.commentsCount}
+                    repostCount={post.repostCount}
                     isLiked={post.isLiked}
+                    isReposted={post.isReposted}
                     isBookmarked={post.isBookmarked}
+                    hasPoll={post.hasPoll}
+                    quotedPost={post.quotedPost}
                   />
                 </div>
               ))}
@@ -253,7 +229,7 @@ const Explore = () => {
             </label>
           </div>
 
-          {searchLoading ? (
+          {searchLoading || (searchQuery.trim() !== debouncedSearch.trim() && peopleSearchTerm(searchQuery).length > 0) ? (
             <div className="stagger" aria-busy="true">
               {[0, 1, 2].map((i) => (
                 <div key={i} className="row px-5 sm:px-8 py-4 flex items-center gap-4" style={{ "--i": i } as React.CSSProperties}>
@@ -267,7 +243,7 @@ const Explore = () => {
             </div>
           ) : searchResults && searchResults.length > 0 ? (
             <div className="stagger">
-              {(searchResults as Person[]).map((profile, idx) => (
+              {searchResults.map((profile, idx) => (
                 <div
                   key={profile.user_id}
                   className="row px-5 sm:px-8 py-4 flex items-center gap-4"
@@ -286,7 +262,7 @@ const Explore = () => {
                   {user?.id !== profile.user_id && (
                     <button
                       onClick={() => followMutation.mutate({ userId: profile.user_id, isFollowing: !!profile.isFollowing })}
-                      disabled={followMutation.isPending}
+                      disabled={followMutation.isPending && followMutation.variables?.userId === profile.user_id}
                       aria-pressed={!!profile.isFollowing}
                       className="quiet text-[13px] h-10 px-2 -mr-2 rounded-md shrink-0 disabled:opacity-50"
                     >
@@ -296,7 +272,7 @@ const Explore = () => {
                 </div>
               ))}
             </div>
-          ) : searchQuery ? (
+          ) : peopleTerm ? (
             <EmptyState
               title="no one by that name."
               description={`nothing matched "${searchQuery}". try part of a name, or a handle.`}

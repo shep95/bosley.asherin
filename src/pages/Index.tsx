@@ -1,6 +1,6 @@
 import { Suspense, lazy, useState, useEffect } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import { Helmet } from "react-helmet-async";
+import { Helmet } from "@/components/Head";
 import LandingV2 from "@/components/landing/v2/LandingV2";
 import FAQSection from "@/components/landing/FAQSection";
 
@@ -27,7 +27,7 @@ const Index = ({ openAuth }: IndexProps) => {
 
   useEffect(() => {
     if (!loading && user) {
-      navigate("/dashboard");
+      navigate("/dashboard", { replace: true });
     }
   }, [user, loading, navigate]);
 
@@ -59,9 +59,9 @@ const Index = ({ openAuth }: IndexProps) => {
           name="description"
           content="bosley is a free social space with a chronological feed, no ads, and no engagement farming. write. talk. leave when you want."
         />
-        <link rel="canonical" href="https://bosley.app/" />
-        <link rel="alternate" type="text/plain" title="llms.txt" href="https://bosley.app/llms.txt" />
-        <meta property="og:url" content="https://bosley.app/" />
+        <link rel="canonical" href="https://bosley.asherin.com/" />
+        <link rel="alternate" type="text/plain" title="llms.txt" href="https://bosley.asherin.com/llms.txt" />
+        <meta property="og:url" content="https://bosley.asherin.com/" />
         <meta property="og:title" content="a quiet room on the internet." />
         <meta
           property="og:description"

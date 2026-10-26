@@ -929,8 +929,15 @@ export type Database = {
           },
         ]
       }
+      dm_accepts: {
+        Row: { user_id: string; partner_id: string; created_at: string }
+        Insert: { user_id: string; partner_id: string; created_at?: string }
+        Update: { user_id?: string; partner_id?: string; created_at?: string }
+        Relationships: []
+      }
       messages: {
         Row: {
+          seen_at: string | null
           content: string
           created_at: string
           expires_at: string | null
@@ -943,6 +950,7 @@ export type Database = {
           viewed_at: string | null
         }
         Insert: {
+          seen_at?: string | null
           content: string
           created_at?: string
           expires_at?: string | null
@@ -955,6 +963,7 @@ export type Database = {
           viewed_at?: string | null
         }
         Update: {
+          seen_at?: string | null
           content?: string
           created_at?: string
           expires_at?: string | null
@@ -1708,6 +1717,7 @@ export type Database = {
       }
       profiles: {
         Row: {
+          member_number: number | null
           avatar_url: string | null
           bio: string | null
           cover_url: string | null
@@ -1725,6 +1735,7 @@ export type Database = {
           website: string | null
         }
         Insert: {
+          member_number?: number | null
           avatar_url?: string | null
           bio?: string | null
           cover_url?: string | null
@@ -1742,6 +1753,7 @@ export type Database = {
           website?: string | null
         }
         Update: {
+          member_number?: number | null
           avatar_url?: string | null
           bio?: string | null
           cover_url?: string | null
@@ -2095,6 +2107,55 @@ export type Database = {
       }
     }
     Functions: {
+      get_post_stats: {
+        Args: { post_ids: string[] }
+        Returns: {
+          post_id: string
+          likes_count: number
+          comments_count: number
+          reposts_count: number
+          liked: boolean
+          reposted: boolean
+          bookmarked: boolean
+        }[]
+      }
+      get_conversations: {
+        Args: Record<PropertyKey, never>
+        Returns: {
+          partner_id: string
+          username: string | null
+          display_name: string | null
+          avatar_url: string | null
+          last_message_id: string
+          last_message: string
+          last_message_at: string
+          last_from_me: boolean
+          unread_count: number
+          is_request: boolean
+        }[]
+      }
+      get_unread_counts: {
+        Args: Record<PropertyKey, never>
+        Returns: { messages: number; requests: number; notifications: number }[]
+      }
+      get_poll_results: {
+        Args: { _post_id: string }
+        Returns: {
+          poll_id: string
+          question: string
+          ends_at: string | null
+          option_id: string
+          option_text: string
+          position: number
+          votes: number
+          total_votes: number
+          my_option_id: string | null
+        }[]
+      }
+      record_profile_view: {
+        Args: { _profile_user: string }
+        Returns: undefined
+      }
       delete_my_account: {
         Args: Record<PropertyKey, never>
         Returns: undefined

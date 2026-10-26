@@ -11,6 +11,13 @@ import {
 } from "date-fns";
 import PageHeader from "@/components/layout/PageHeader";
 import EmptyState from "@/components/ui/empty-state";
+import { parseCsv } from "@/lib/csv";
+import { friendlyDbError } from "@/lib/dbErrors";
+
+const CSV_MAX_ROWS = 100;
+const POST_MAX = 500;
+
+type ImportProblem = { row: number; reason: string };
 
 interface ScheduledPost {
   id: string;
@@ -27,6 +34,8 @@ const Calendar = () => {
   const [dragId, setDragId] = useState<string | null>(null);
   const [selectedDay, setSelectedDay] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [importProblems, setImportProblems] = useState<ImportProblem[] | null>(null);
+  const [importing, setImporting] = useState(false);
 
   const monthStart = startOfMonth(cursor);
   const monthEnd = endOfMonth(cursor);
@@ -37,7 +46,7 @@ const Calendar = () => {
     queryKey: ['scheduled-calendar', user?.id, cursor.getMonth(), cursor.getFullYear()],
     queryFn: async () => {
       if (!user) return [];
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from('scheduled_posts')
         .select('id, content, scheduled_for, status')
         .eq('user_id', user.id)
@@ -45,6 +54,7 @@ const Calendar = () => {
         .gte('scheduled_for', gridStart.toISOString())
         .lte('scheduled_for', gridEnd.toISOString())
         .order('scheduled_for');
+      if (error) throw error;
       return (data || []) as ScheduledPost[];
     },
     enabled: !!user
@@ -54,14 +64,15 @@ const Calendar = () => {
     mutationFn: async ({ id, date }: { id: string; date: Date }) => {
       const { error } = await supabase.from('scheduled_posts')
         .update({ scheduled_for: date.toISOString() })
-        .eq('id', id);
+        .eq('id', id)
+        .eq('status', 'pending');
       if (error) throw error;
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['scheduled-calendar'] });
       toast({ title: "moved" });
     },
-    onError: (e: Error) => toast({ title: "could not move it", description: e.message, variant: "destructive" })
+    onError: (e) => toast({ title: friendlyDbError(e, "could not move it. try again."), variant: "destructive" })
   });
 
   const days: Date[] = [];
@@ -93,39 +104,86 @@ const Calendar = () => {
     setDragId(null);
   };
 
+  /**
+   * Import scheduled posts from a CSV with a header row naming `content` and
+   * `scheduled_for`. All or nothing: if any row is wrong, nothing is written
+   * and every problem is listed by row number.
+   */
   const handleCSV = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file || !user) return;
-    const text = await file.text();
-    const lines = text.split('\n').filter(l => l.trim());
-    // Expect header: content,scheduled_for
-    const rows = lines.slice(1).map(l => {
-      // simple CSV (no embedded quoted commas)
-      const [content, scheduled_for] = l.split(',').map(s => s.trim().replace(/^"|"$/g, ''));
-      return { content, scheduled_for };
-    }).filter(r => r.content && r.scheduled_for && isValid(parseISO(r.scheduled_for)));
+    const input = e.target;
+    const file = input.files?.[0];
+    input.value = "";
+    if (!file || !user || importing) return;
+    setImportProblems(null);
 
-    if (!rows.length) {
-      toast({ title: "no rows to import", description: "the file needs a header row: content,scheduled_for (iso date).", variant: "destructive" });
-      e.target.value = "";
+    let table: string[][];
+    try {
+      table = parseCsv(await file.text());
+    } catch {
+      toast({ title: "could not read that file.", variant: "destructive" });
       return;
     }
 
-    const inserts = rows.map(r => ({
-      user_id: user.id,
-      content: r.content,
-      scheduled_for: parseISO(r.scheduled_for).toISOString(),
-      status: 'pending' as const,
-      visibility: 'public',
-    }));
-    const { error } = await supabase.from('scheduled_posts').insert(inserts);
-    if (error) {
-      toast({ title: "import failed", description: error.message, variant: "destructive" });
-    } else {
-      toast({ title: `imported ${inserts.length} ${inserts.length === 1 ? "post" : "posts"}` });
-      qc.invalidateQueries({ queryKey: ['scheduled-calendar'] });
+    const header = (table[0] ?? []).map((h) => h.trim().toLowerCase());
+    const contentCol = header.indexOf('content');
+    const dateCol = header.indexOf('scheduled_for');
+    if (contentCol === -1 || dateCol === -1) {
+      toast({ title: "the first row must name two columns: content, scheduled_for.", variant: "destructive" });
+      return;
     }
-    e.target.value = "";
+
+    const dataRows = table.slice(1);
+    if (dataRows.length === 0) {
+      toast({ title: "no rows to import.", variant: "destructive" });
+      return;
+    }
+    if (dataRows.length > CSV_MAX_ROWS) {
+      toast({ title: `${CSV_MAX_ROWS} rows at most per file. this one has ${dataRows.length}.`, variant: "destructive" });
+      return;
+    }
+
+    const now = Date.now();
+    const problems: ImportProblem[] = [];
+    const inserts: { user_id: string; content: string; scheduled_for: string; status: 'pending'; visibility: string }[] = [];
+    dataRows.forEach((cells, i) => {
+      const rowNumber = i + 2; // as a spreadsheet numbers it, header is row 1
+      const content = (cells[contentCol] ?? "").trim();
+      const rawDate = (cells[dateCol] ?? "").trim();
+      const date = parseISO(rawDate);
+      if (!content) problems.push({ row: rowNumber, reason: "no content." });
+      else if (content.length > POST_MAX) problems.push({ row: rowNumber, reason: `longer than ${POST_MAX} characters.` });
+      if (!rawDate || !isValid(date)) problems.push({ row: rowNumber, reason: "the date is not an iso date, like 2026-11-02T09:30." });
+      else if (date.getTime() <= now) problems.push({ row: rowNumber, reason: "the date has passed." });
+      if (content && content.length <= POST_MAX && isValid(date) && date.getTime() > now) {
+        inserts.push({
+          user_id: user.id,
+          content,
+          scheduled_for: date.toISOString(),
+          status: 'pending',
+          visibility: 'public',
+        });
+      }
+    });
+
+    if (problems.length > 0) {
+      setImportProblems(problems);
+      toast({
+        title: `nothing imported. ${problems.length} ${problems.length === 1 ? "problem" : "problems"} to fix.`,
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setImporting(true);
+    const { error } = await supabase.from('scheduled_posts').insert(inserts);
+    setImporting(false);
+    if (error) {
+      toast({ title: friendlyDbError(error, "import failed. nothing was added."), variant: "destructive" });
+      return;
+    }
+    toast({ title: `imported ${inserts.length} ${inserts.length === 1 ? "post" : "posts"}` });
+    qc.invalidateQueries({ queryKey: ['scheduled-calendar'] });
+    qc.invalidateQueries({ queryKey: ['scheduled-posts'] });
   };
 
   const monthPosts = (scheduled || []).filter(p => isSameMonth(parseISO(p.scheduled_for), cursor));
@@ -139,8 +197,13 @@ const Calendar = () => {
         actions={
           <>
             <input ref={fileInputRef} type="file" accept=".csv" onChange={handleCSV} className="hidden" aria-label="import csv" />
-            <button onClick={() => fileInputRef.current?.click()} className="quiet text-[13px] h-10 px-2 rounded-md">
-              import csv
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              disabled={importing}
+              aria-busy={importing}
+              className="quiet text-[13px] h-10 px-2 rounded-md"
+            >
+              {importing ? "importing…" : "import csv"}
             </button>
           </>
         }
@@ -161,6 +224,23 @@ const Calendar = () => {
           </div>
         }
       />
+
+      {importProblems && importProblems.length > 0 && (
+        <div className="row px-5 sm:px-8 py-4" role="alert">
+          <div className="flex items-baseline justify-between gap-4">
+            <p className="text-[13px] font-light text-foreground">the csv was not imported. fix these rows and try again.</p>
+            <button onClick={() => setImportProblems(null)} className="quiet text-[13px] h-9 px-2 -mr-2 rounded-md shrink-0">
+              dismiss
+            </button>
+          </div>
+          <ul className="mt-2 space-y-1 text-[12px] font-light text-foreground/60 tabular-nums">
+            {importProblems.slice(0, 12).map((p, i) => (
+              <li key={i}>row {p.row}: {p.reason}</li>
+            ))}
+            {importProblems.length > 12 && <li className="text-foreground/40">and {importProblems.length - 12} more.</li>}
+          </ul>
+        </div>
+      )}
 
       <div className="px-5 sm:px-8 pb-6">
         <div className="grid grid-cols-7">
@@ -220,7 +300,7 @@ const Calendar = () => {
             );
           })}
         </div>
-        <p className="mt-3 text-[12px] font-light text-foreground/35">drag a post to another day to move it. csv needs two columns: content, scheduled_for.</p>
+        <p className="mt-3 text-[12px] font-light text-foreground/35">drag a post to another day to move it. csv needs two columns, content and scheduled_for, with future iso dates. up to 100 rows.</p>
       </div>
 
       {!isLoading && (

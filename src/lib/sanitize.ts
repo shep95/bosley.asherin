@@ -118,19 +118,43 @@ export const isRateLimited = (key: string, maxAttempts: number, windowMs: number
   }
 };
 
+/** Collapse whitespace, trim, and cap the length of a search box value. */
+const normalizeSearchInput = (input: string, maxLength: number): string =>
+  (input ?? '').replace(/\s+/g, ' ').trim().slice(0, maxLength);
+
 /**
- * Escape a user-supplied value before interpolating it into a PostgREST filter
- * string such as `.or('username.ilike.%foo%')` or `.ilike('col', '%foo%')`.
- * Commas, parentheses and dots are filter grammar; `%` and `_` are LIKE
- * wildcards; backslashes are escapes. Stripping them keeps the filter shape
- * fixed no matter what the user typed.
+ * Escape a value for a LIKE / ILIKE pattern passed as a single PostgREST
+ * filter, e.g. `.ilike('content', `%${escapeLikeValue(q)}%`)`.
+ * `%` and `_` are LIKE wildcards and `\` is LIKE's escape character, so all
+ * three are backslash-escaped (searching "john_doe" matches only "john_doe").
+ * `*` is PostgREST's wildcard alias and cannot be escaped, so it is dropped.
+ * Use this with `.ilike()` (never inside `.or()`): one column per filter.
+ */
+export const escapeLikeValue = (input: string, maxLength = 100): string =>
+  normalizeSearchInput(input, maxLength)
+    .replace(/\*/g, '')
+    .replace(/[\\%_]/g, (m) => `\\${m}`);
+
+/**
+ * People search: a leading "@" is how handles are written, not part of them.
+ */
+export const peopleSearchTerm = (input: string): string =>
+  (input ?? '').trim().replace(/^@+/, '');
+
+/**
+ * Escape a user-supplied value before interpolating it into a PostgREST
+ * logic-tree filter such as `.or('username.ilike.%foo%,display_name.ilike.%foo%')`.
+ * Commas, parentheses and quotes are filter grammar and are removed (they
+ * cannot be escaped inside an unquoted `.or()` value); `%` and `_` are
+ * backslash-escaped so they match literally. Dots and underscores are kept,
+ * so "john_doe" and "j.doe" search as typed. Prefer `escapeLikeValue` with
+ * separate `.ilike()` queries where possible.
  */
 export const escapeFilterValue = (input: string, maxLength = 100): string =>
-  (input ?? '')
-    .replace(/[,()\\%_*."'`;]/g, '')
-    .replace(/\s+/g, ' ')
-    .trim()
-    .slice(0, maxLength);
+  normalizeSearchInput(input, maxLength)
+    .replace(/[,()"'`;*\\]/g, '')
+    .replace(/[%_]/g, (m) => `\\${m}`)
+    .trim();
 
 /** Map an allow-listed MIME type to the storage extension we emit. Never trust the filename. */
 export const extensionForMime = (mime: string): string | null => {

@@ -1,27 +1,29 @@
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Switch } from "@/components/ui/switch";
-import { Label } from "@/components/ui/label";
 import { Plus, X, BarChart3 } from "lucide-react";
 
 interface PollCreatorProps {
   onPollChange: (poll: PollData | null) => void;
   poll: PollData | null;
+  /** When set, the poll cannot be added and this one line says why. */
+  disabledReason?: string | null;
 }
 
+/**
+ * One answer per voter: poll_votes is unique on (poll_id, user_id), so a
+ * "more than one answer" poll could never record a second choice.
+ */
 export interface PollData {
   question: string;
   options: string[];
-  allowsMultiple: boolean;
   duration: string; // '1d', '3d', '7d', 'none'
 }
 
-const PollCreator = ({ onPollChange, poll }: PollCreatorProps) => {
+const PollCreator = ({ onPollChange, poll, disabledReason }: PollCreatorProps) => {
   const [isExpanded, setIsExpanded] = useState(!!poll);
   const [question, setQuestion] = useState(poll?.question || "");
   const [options, setOptions] = useState<string[]>(poll?.options || ["", ""]);
-  const [allowsMultiple, setAllowsMultiple] = useState(poll?.allowsMultiple || false);
   const [duration, setDuration] = useState(poll?.duration || "1d");
 
   const handleToggle = () => {
@@ -30,7 +32,6 @@ const PollCreator = ({ onPollChange, poll }: PollCreatorProps) => {
       onPollChange(null);
       setQuestion("");
       setOptions(["", ""]);
-      setAllowsMultiple(false);
       setDuration("1d");
     }
     setIsExpanded(!isExpanded);
@@ -46,7 +47,6 @@ const PollCreator = ({ onPollChange, poll }: PollCreatorProps) => {
       onPollChange({
         question: newQuestion.trim(),
         options: validOptions,
-        allowsMultiple,
         duration
       });
     } else {
@@ -76,17 +76,21 @@ const PollCreator = ({ onPollChange, poll }: PollCreatorProps) => {
 
   return (
     <div className="space-y-3">
-      <Button
-        type="button"
-        variant="ghost"
-        size="sm"
-        onClick={handleToggle}
-        aria-pressed={isExpanded}
-        className="quiet gap-1.5 h-8 px-2 text-[13px] font-light -ml-2"
-      >
-        <BarChart3 className="w-[15px] h-[15px]" />
-        {isExpanded ? 'remove poll' : 'poll'}
-      </Button>
+      <div className="flex items-center gap-2">
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          onClick={handleToggle}
+          aria-pressed={isExpanded}
+          disabled={!isExpanded && !!disabledReason}
+          className="quiet gap-1.5 h-8 px-2 text-[13px] font-light -ml-2"
+        >
+          <BarChart3 className="w-[15px] h-[15px]" />
+          {isExpanded ? 'remove poll' : 'poll'}
+        </Button>
+        {disabledReason && <span className="text-[12px] font-light text-foreground/40">{disabledReason}</span>}
+      </div>
 
       {isExpanded && (
         <div className="mt-2 pl-4 border-l border-foreground/15 space-y-3">
@@ -135,23 +139,7 @@ const PollCreator = ({ onPollChange, poll }: PollCreatorProps) => {
           )}
 
           <div className="flex items-center justify-between pt-3 border-t border-foreground/10">
-            <div className="flex items-center gap-2">
-              <Switch
-                checked={allowsMultiple}
-                onCheckedChange={(checked) => {
-                  setAllowsMultiple(checked);
-                  if (question.trim() && options.filter(o => o.trim()).length >= 2) {
-                    onPollChange({
-                      question: question.trim(),
-                      options: options.filter(o => o.trim()),
-                      allowsMultiple: checked,
-                      duration
-                    });
-                  }
-                }}
-              />
-              <Label className="text-[13px] font-light text-foreground/60">more than one answer</Label>
-            </div>
+            <span className="text-[13px] font-light text-foreground/50">one answer each</span>
 
             <select
               value={duration}
@@ -161,7 +149,6 @@ const PollCreator = ({ onPollChange, poll }: PollCreatorProps) => {
                   onPollChange({
                     question: question.trim(),
                     options: options.filter(o => o.trim()),
-                    allowsMultiple,
                     duration: e.target.value
                   });
                 }

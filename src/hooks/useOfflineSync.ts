@@ -12,8 +12,14 @@ import {
 import { useQueryClient } from '@tanstack/react-query';
 import { useToast } from '@/hooks/use-toast';
 import {
-  getQueue,
+  getDueQueue,
+  getPendingQueue,
+  getFailedPosts,
   removeFromQueue,
+  recordSyncFailure,
+  retryFailedPost,
+  discardFailedPosts,
+  nextDueAt,
   canSync,
   markSynced,
   base64ToFile,
@@ -22,23 +28,37 @@ import {
   getQueueCount
 } from '@/lib/offlineQueue';
 
+type SyncResult = { ok: boolean; permanent?: boolean; reason?: string };
+
+/** Errors that will fail the same way on every retry. */
+const isPermanent = (error: unknown): boolean => {
+  const code = (error as { code?: string } | null)?.code ?? '';
+  // RLS refusal, constraint / invalid-input classes.
+  return code === '42501' || code.startsWith('22') || code.startsWith('23');
+};
+
+class UploadRejected extends Error {}
+
 export function useOfflineSync() {
   const [isSyncing, setIsSyncing] = useState(false);
   const [queueCount, setQueueCount] = useState(0);
+  const [failedPosts, setFailedPosts] = useState<QueuedPost[]>([]);
   const [isOffline, setIsOffline] = useState(!navigator.onLine);
   const { user } = useAuth();
+  const userId = user?.id ?? null;
   const queryClient = useQueryClient();
   const { toast } = useToast();
+  // A ref, not state: the sync must not re-arm itself whenever isSyncing flips.
+  const syncingRef = useRef(false);
+  const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Update queue count
   const updateQueueCount = useCallback(() => {
     setQueueCount(getQueueCount());
+    setFailedPosts(getFailedPosts());
   }, []);
 
   // Sync a single post
-  const syncPost = async (post: QueuedPost): Promise<boolean> => {
-    if (!user) return false;
-
+  const syncPost = useCallback(async (post: QueuedPost, uid: string): Promise<SyncResult> => {
     try {
       const mediaUrls: string[] = [];
 
@@ -54,14 +74,14 @@ export function useOfflineSync() {
             isVideo ? ALLOWED_VIDEO_TYPES : ALLOWED_IMAGE_TYPES,
             isVideo ? MAX_FILE_SIZES.video : MAX_FILE_SIZES.image,
           );
-          if (invalid) throw new Error(invalid);
+          if (invalid) throw new UploadRejected(invalid);
           // Queued media was scrubbed at capture time; re-scrub defensively in
           // case the entry predates the sanitizer.
           const file = await stripMetadata(raw);
           // Extension comes from the allow-listed MIME type, never the filename.
           const fileExt = extensionForMime(file.type);
-          if (!fileExt) throw new Error('Unsupported media type');
-          const fileName = `${user.id}/${Date.now()}-${Math.random().toString(36).substr(2, 9)}.${fileExt}`;
+          if (!fileExt) throw new UploadRejected('unsupported media type');
+          const fileName = `${uid}/${Date.now()}-${Math.random().toString(36).slice(2, 11)}.${fileExt}`;
 
           const { error: uploadError } = await supabase.storage
             .from('post-media')
@@ -69,16 +89,13 @@ export function useOfflineSync() {
 
           if (uploadError) throw uploadError;
 
-          const { data: { publicUrl } } = supabase.storage
-            .from('post-media')
-            .getPublicUrl(fileName);
-
-          mediaUrls.push(publicUrl);
+          // Buckets are private: store the object path; the feed signs it.
+          mediaUrls.push(fileName);
         }
       }
 
       // Calculate expiry date
-      let expiresAt = null;
+      let expiresAt: Date | null = null;
       if (post.expiresIn) {
         const now = new Date();
         switch (post.expiresIn) {
@@ -91,84 +108,130 @@ export function useOfflineSync() {
       // Create the post
       const { error } = await supabase.from('posts').insert({
         content: post.content,
-        user_id: user.id,
+        user_id: uid,
         media_urls: mediaUrls,
         expires_at: expiresAt?.toISOString(),
         topic_id: post.topicId || null,
         // CRITICAL: preserve audience selection so a post queued to a private
         // circle never gets silently published to the public feed on sync.
         circle_ids: post.circleIds ?? [],
-        visibility: post.visibility ?? 'public',
+        // Items queued before the fix may still say 'circles'.
+        visibility: (post.visibility as string) === 'circles' ? 'circle' : (post.visibility ?? 'public'),
         reply_control: post.replyControl ?? 'everyone'
       });
 
       if (error) throw error;
 
-      return true;
+      return { ok: true };
     } catch (error) {
       if (import.meta.env.DEV) console.error('Failed to sync post:', error);
-      return false;
+      const permanent = error instanceof UploadRejected || isPermanent(error);
+      return { ok: false, permanent, reason: permanent ? 'rejected' : 'network' };
     }
-  };
+  }, []);
 
-  // Sync all queued posts
-  const syncQueue = useCallback(async () => {
-    if (!user || !canSync() || isSyncing) return;
+  /**
+   * Send whatever is due. `manual` (the "send now" button) ignores backoff
+   * timing for pending posts, but never resurrects failed ones.
+   */
+  const runSync = useCallback(async (manual: boolean) => {
+    // Offline: the 'online' listener picks it up. Busy: the running sync reschedules.
+    if (!userId || syncingRef.current || !isOnline()) return;
+    if (!manual && !canSync()) {
+      scheduleNextRef.current();
+      return;
+    }
 
-    const queue = getQueue();
-    if (queue.length === 0) return;
+    const queue = manual ? getPendingQueue() : getDueQueue();
+    if (queue.length === 0) {
+      updateQueueCount();
+      scheduleNextRef.current();
+      return;
+    }
 
+    syncingRef.current = true;
     setIsSyncing(true);
     markSynced();
 
     let successCount = 0;
-    let failCount = 0;
+    let gaveUpCount = 0;
 
-    for (const post of queue) {
-      const success = await syncPost(post);
-      if (success) {
-        removeFromQueue(post.id);
-        successCount++;
-      } else {
-        failCount++;
+    try {
+      for (const post of queue) {
+        const result = await syncPost(post, userId);
+        if (result.ok) {
+          removeFromQueue(post.id);
+          successCount++;
+        } else if (recordSyncFailure(post.id, result.reason ?? 'network', !!result.permanent)) {
+          gaveUpCount++;
+        }
       }
+    } finally {
+      syncingRef.current = false;
+      setIsSyncing(false);
+      updateQueueCount();
     }
 
-    setIsSyncing(false);
-    updateQueueCount();
-
     if (successCount > 0) {
-      queryClient.invalidateQueries({ queryKey: ['posts'] });
+      void queryClient.invalidateQueries({ queryKey: ['posts'] });
       toast({
-        title: `${successCount} post${successCount > 1 ? 's' : ''} synced`,
-        description: 'Your offline posts have been published.'
+        title: `${successCount} queued post${successCount > 1 ? 's' : ''} sent.`,
       });
     }
 
-    if (failCount > 0) {
+    // Transient failures retry quietly with backoff; only giving up is worth a toast.
+    if (gaveUpCount > 0) {
       toast({
-        title: 'Some posts failed to sync',
-        description: `${failCount} post${failCount > 1 ? 's' : ''} will be retried later.`,
+        title: `${gaveUpCount === 1 ? 'a queued post' : `${gaveUpCount} queued posts`} could not be sent.`,
+        description: 'we stopped retrying. you can discard it or try again.',
         variant: 'destructive'
       });
     }
-  }, [user, isSyncing, queryClient, toast, updateQueueCount]);
 
-  // The delayed online sync must call whichever syncQueue is current when the
-  // timer fires, not the one captured when the listener was registered.
-  const syncQueueRef = useRef(syncQueue);
+    scheduleNextRef.current();
+  }, [userId, syncPost, queryClient, toast, updateQueueCount]);
+
+  // Wake up when the earliest backed-off post becomes due.
+  const scheduleNext = useCallback(() => {
+    if (retryTimerRef.current) clearTimeout(retryTimerRef.current);
+    retryTimerRef.current = null;
+    const due = nextDueAt();
+    if (due === null || !userId) return;
+    retryTimerRef.current = setTimeout(() => { void runSyncRef.current(false); }, Math.max(10_000, due - Date.now()));
+  }, [userId]);
+
+  const runSyncRef = useRef(runSync);
+  const scheduleNextRef = useRef(scheduleNext);
   useEffect(() => {
-    syncQueueRef.current = syncQueue;
-  }, [syncQueue]);
+    runSyncRef.current = runSync;
+    scheduleNextRef.current = scheduleNext;
+  }, [runSync, scheduleNext]);
 
-  // Listen for online/offline events
+  /** Manual "send now". Safe to pass straight to onClick (ignores its argument). */
+  const syncQueue = useCallback(() => runSyncRef.current(true), []);
+
+  const retryFailed = useCallback((postId?: string) => {
+    const ids = postId ? [postId] : getFailedPosts().map(p => p.id);
+    ids.forEach(retryFailedPost);
+    updateQueueCount();
+    void runSyncRef.current(true);
+  }, [updateQueueCount]);
+
+  const discardFailed = useCallback((postId?: string) => {
+    if (postId) removeFromQueue(postId);
+    else discardFailedPosts();
+    updateQueueCount();
+  }, [updateQueueCount]);
+
+  // Online/offline listeners and the initial sync: once per signed-in user,
+  // not after every sync.
   useEffect(() => {
     let onlineTimer: ReturnType<typeof setTimeout> | null = null;
     const handleOnline = () => {
       setIsOffline(false);
       // Delay sync slightly to ensure connection is stable
       if (onlineTimer) clearTimeout(onlineTimer);
-      onlineTimer = setTimeout(() => { void syncQueueRef.current(); }, 2000);
+      onlineTimer = setTimeout(() => { void runSyncRef.current(false); }, 2000);
     };
 
     const handleOffline = () => {
@@ -178,24 +241,29 @@ export function useOfflineSync() {
     window.addEventListener('online', handleOnline);
     window.addEventListener('offline', handleOffline);
 
-    // Initial check
     updateQueueCount();
-    if (isOnline() && user) {
-      syncQueue();
-    }
+    if (userId && isOnline()) void runSyncRef.current(false);
+    scheduleNextRef.current();
 
     return () => {
       if (onlineTimer) clearTimeout(onlineTimer);
+      if (retryTimerRef.current) clearTimeout(retryTimerRef.current);
+      retryTimerRef.current = null;
       window.removeEventListener('online', handleOnline);
       window.removeEventListener('offline', handleOffline);
     };
-  }, [syncQueue, updateQueueCount, user]);
+  }, [userId, updateQueueCount]);
 
   return {
     isSyncing,
     queueCount,
     isOffline,
     syncQueue,
-    updateQueueCount
+    updateQueueCount,
+    /** Posts we stopped retrying; show them and offer discard / retry. */
+    failedPosts,
+    failedCount: failedPosts.length,
+    retryFailed,
+    discardFailed,
   };
 }

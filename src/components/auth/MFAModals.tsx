@@ -6,6 +6,7 @@ import { Label } from "@/components/ui/label";
 import { supabase } from "@/integrations/supabase/client";
 import { Loader2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { logAuditEvent } from "@/lib/auditLog";
 
 interface MFAEnrollModalProps {
   open: boolean;
@@ -76,7 +77,7 @@ export const MFAEnrollModal = ({ open, onOpenChange, onEnrolled }: MFAEnrollModa
       setFactorId(data.id);
       factorIdRef.current = data.id;
       setStep('qr');
-    } catch (error: any) {
+    } catch {
       // Generic message — never surface raw provider errors to the UI
       toast({
         title: "could not start two-factor setup",
@@ -112,10 +113,11 @@ export const MFAEnrollModal = ({ open, onOpenChange, onEnrolled }: MFAEnrollModa
       completedRef.current = true;
       factorIdRef.current = '';
 
+      logAuditEvent('mfa_enabled');
       toast({ title: "two-factor is on" });
       onEnrolled();
       onOpenChange(false);
-    } catch (error: any) {
+    } catch {
       // Avoid leaking factor IDs / challenge IDs / Supabase internals
       toast({
         title: "that code did not match",
@@ -265,7 +267,7 @@ export const MFAVerifyModal = ({ open, onOpenChange, onVerified, onSignOut }: MF
 
       onVerified();
       onOpenChange(false);
-    } catch (error: any) {
+    } catch {
       toast({ title: "that code did not match", description: "check your authenticator app and try again.", variant: "destructive" });
       setCode('');
     } finally {

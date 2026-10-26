@@ -1,9 +1,13 @@
-import { useState, useEffect, useCallback, createContext, useContext, ReactNode } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef, createContext, useContext, ReactNode } from 'react';
 import { supabase } from '@/integrations/supabase/client';
-import { User, Session, AuthError } from '@supabase/supabase-js';
+import { User, Session } from '@supabase/supabase-js';
 import { checkPasswordBreached, checkLoginRateLimit, recordLoginAttempt } from '@/lib/securityChecks';
 import { sanitizeEmail, sanitizeUsername } from '@/lib/sanitize';
 import { clearQueue } from '@/lib/offlineQueue';
+import { queryClient } from '@/lib/queryClient';
+import { logAuditEvent } from '@/lib/auditLog';
+
+export type SignOutScope = 'local' | 'global';
 
 interface AuthContextType {
   user: User | null;
@@ -12,10 +16,11 @@ interface AuthContextType {
   mfaRequired: boolean;
   signUp: (email: string, password: string, username: string, captchaToken?: string) => Promise<{ error: string | null; needsConfirmation?: boolean }>;
   signIn: (email: string, password: string, captchaToken?: string) => Promise<{ error: string | null; mfaRequired?: boolean; unconfirmed?: boolean }>;
-  resendConfirmation: (email: string) => Promise<void>;
-  signOut: () => Promise<void>;
+  resendConfirmation: (email: string, captchaToken?: string) => Promise<void>;
+  /** 'local' (default) ends this device's session; 'global' revokes every session. */
+  signOut: (scope?: SignOutScope) => Promise<{ error: string | null }>;
   clearMfaRequired: () => Promise<boolean>;
-  resetPassword: (email: string) => Promise<{ error: string | null }>;
+  resetPassword: (email: string, captchaToken?: string) => Promise<{ error: string | null }>;
   updatePassword: (newPassword: string) => Promise<{ error: string | null }>;
 }
 
@@ -43,6 +48,8 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
   const [mfaRequired, setMfaRequired] = useState(false);
+  // undefined = not resolved yet (first load), null = signed out.
+  const lastUserIdRef = useRef<string | null | undefined>(undefined);
 
   useEffect(() => {
     let cancelled = false;
@@ -53,6 +60,14 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     const applySession = async (next: Session | null) => {
       const required = next ? await checkMfaRequired() : false;
       if (cancelled) return;
+      const nextUserId = next?.user?.id ?? null;
+      const prevUserId = lastUserIdRef.current;
+      // A different account (or none) must never see the previous account's
+      // cached feed, DMs or settings. Clear before the new user renders.
+      if (prevUserId !== undefined && prevUserId !== nextUserId) {
+        queryClient.clear();
+      }
+      lastUserIdRef.current = nextUserId;
       setSession(next);
       setUser(next?.user ?? null);
       setMfaRequired(required);
@@ -60,7 +75,20 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     };
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      (_event, next) => {
+      (event, next) => {
+        if (event === 'SIGNED_OUT') {
+          queryClient.clear();
+        }
+        // SIGNED_IN also fires when an existing session is re-validated (tab
+        // focus); only a real transition into an account counts as a sign-in.
+        if (
+          event === 'SIGNED_IN' &&
+          next?.user &&
+          lastUserIdRef.current !== undefined &&
+          lastUserIdRef.current !== next.user.id
+        ) {
+          logAuditEvent('sign_in');
+        }
         // Defer the async work off the callback tick; supabase-js warns against
         // awaiting other auth calls directly inside onAuthStateChange.
         setTimeout(() => { void applySession(next); }, 0);
@@ -75,7 +103,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     };
   }, []);
 
-  const signUp = async (
+  const signUp = useCallback(async (
     email: string,
     password: string,
     username: string,
@@ -163,12 +191,12 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       }
 
       return { error: null };
-    } catch (err) {
+    } catch {
       return { error: 'An unexpected error occurred' };
     }
-  };
+  }, []);
 
-  const signIn = async (
+  const signIn = useCallback(async (
     email: string,
     password: string,
     captchaToken?: string
@@ -212,10 +240,10 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       }
 
       return { error: null };
-    } catch (err) {
+    } catch {
       return { error: 'An unexpected error occurred' };
     }
-  };
+  }, []);
 
   /**
    * Request a password-reset email. Deliberately returns `{ error: null }` for
@@ -223,7 +251,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
    * the response can never be used to enumerate registered addresses. Only a
    * transport failure surfaces as an error.
    */
-  const resetPassword = async (email: string): Promise<{ error: string | null }> => {
+  const resetPassword = useCallback(async (email: string, captchaToken?: string): Promise<{ error: string | null }> => {
     const cleanEmail = sanitizeEmail(email);
     if (!cleanEmail || !cleanEmail.includes('@')) {
       return { error: 'Please enter a valid email address.' };
@@ -232,6 +260,9 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     try {
       const { error } = await supabase.auth.resetPasswordForEmail(cleanEmail, {
         redirectTo: window.location.origin + '/reset-password',
+        // Required by GoTrue when Turnstile is enabled; without it the request
+        // is rejected while the UI still says "check your inbox".
+        ...(captchaToken ? { captchaToken } : {}),
       });
       // supabase-js reports fetch failures as a retryable error (status 0)
       // rather than throwing; everything else is swallowed on purpose.
@@ -242,13 +273,13 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     } catch {
       return { error: networkError };
     }
-  };
+  }, []);
 
   /**
    * Set a new password on the current (recovery or regular) session. Enforces
    * the same minimum length and breach check as sign-up.
    */
-  const updatePassword = async (newPassword: string): Promise<{ error: string | null }> => {
+  const updatePassword = useCallback(async (newPassword: string): Promise<{ error: string | null }> => {
     try {
       if (newPassword.length < 12) {
         return { error: 'Password must be at least 12 characters.' };
@@ -263,46 +294,67 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       if (error) {
         return { error: 'Unable to update password. The link may have expired — request a new one.' };
       }
+      logAuditEvent('password_changed');
       return { error: null };
     } catch {
       return { error: 'An unexpected error occurred' };
     }
-  };
+  }, []);
 
-  const signOut = async () => {
-    await supabase.auth.signOut();
+  const signOut = useCallback(async (scope: SignOutScope = 'local'): Promise<{ error: string | null }> => {
+    let failed = false;
+    try {
+      const { error } = await supabase.auth.signOut({ scope });
+      if (error) {
+        failed = true;
+        // A failed global revoke (offline, expired token) must still end the
+        // session on this device.
+        if (scope !== 'local') await supabase.auth.signOut({ scope: 'local' });
+      }
+    } catch {
+      failed = true;
+    }
     setMfaRequired(false);
+    // Nothing from this account may survive in memory for the next one.
+    queryClient.clear();
     // Clear locally cached drafts/media so they don't leak on shared devices
     try { clearQueue(); } catch { /* noop */ }
-  };
+    return { error: failed && scope === 'global' ? 'could not sign out other devices. this one is signed out.' : null };
+  }, []);
+
+  const resendConfirmation = useCallback(async (email: string, captchaToken?: string) => {
+    try {
+      await supabase.auth.resend({
+        type: 'signup',
+        email: sanitizeEmail(email),
+        options: {
+          emailRedirectTo: window.location.origin + '/dashboard',
+          ...(captchaToken ? { captchaToken } : {}),
+        },
+      });
+    } catch {
+      /* neutral: the UI always says "sent if that account exists" */
+    }
+  }, []);
 
   /**
    * Re-check the AAL instead of blindly clearing. The gate only opens once the
    * session has genuinely been upgraded to aal2 by a successful TOTP verify.
    * Resolves to the new `mfaRequired` value.
    */
-  const resendConfirmation = async (email: string) => {
-    try {
-      await supabase.auth.resend({
-        type: 'signup',
-        email: sanitizeEmail(email),
-        options: { emailRedirectTo: window.location.origin + '/dashboard' },
-      });
-    } catch {
-      /* neutral: the UI always says "sent if that account exists" */
-    }
-  };
-
   const clearMfaRequired = useCallback(async (): Promise<boolean> => {
     const required = await checkMfaRequired();
     setMfaRequired(required);
     return required;
   }, []);
 
+  const value = useMemo<AuthContextType>(
+    () => ({ user, session, loading, mfaRequired, signUp, signIn, signOut, resendConfirmation, clearMfaRequired, resetPassword, updatePassword }),
+    [user, session, loading, mfaRequired, signUp, signIn, signOut, resendConfirmation, clearMfaRequired, resetPassword, updatePassword]
+  );
+
   return (
-    <AuthContext.Provider
-      value={{ user, session, loading, mfaRequired, signUp, signIn, signOut, resendConfirmation, clearMfaRequired, resetPassword, updatePassword }}
-    >
+    <AuthContext.Provider value={value}>
       {children}
     </AuthContext.Provider>
   );

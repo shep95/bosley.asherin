@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import DashboardLayout from "@/components/layout/DashboardLayout";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
@@ -8,6 +8,8 @@ import { useToast } from "@/hooks/use-toast";
 import { Loader2, X } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import PageHeader from "@/components/layout/PageHeader";
+import { friendlyDbError, isUniqueViolation } from "@/lib/dbErrors";
+import { FEED_QUERY_ROOTS } from "@/lib/postFeed";
 
 const MAX = 500;
 
@@ -18,6 +20,10 @@ const ThreadComposer = () => {
   const navigate = useNavigate();
   const [posts, setPosts] = useState<string[]>(["", ""]);
   const [touched, setTouched] = useState(false);
+  // Ids for the current text, reused on retry: if a previous attempt did land
+  // but its response was lost, the retry hits a duplicate key instead of
+  // posting the thread twice.
+  const attemptRef = useRef<{ signature: string; ids: string[] } | null>(null);
 
   const updatePost = (idx: number, val: string) => {
     setPosts(p => p.map((x, i) => i === idx ? val : x));
@@ -28,42 +34,47 @@ const ThreadComposer = () => {
 
   const publish = useMutation({
     mutationFn: async () => {
-      if (!user) throw new Error("Not authenticated");
+      if (!user) throw new Error("not signed in.");
       const filled = posts.map(p => p.trim()).filter(Boolean);
-      if (filled.length < 2) throw new Error("Thread needs at least 2 posts");
-      if (filled.some(p => p.length > 500)) throw new Error("Each post max 500 chars");
+      if (filled.length < 2) throw new Error("a thread is at least two posts.");
+      if (filled.some(p => p.length > MAX)) throw new Error(`each post fits in ${MAX} characters.`);
 
-      // Insert first post as the head of thread
-      const { data: head, error: e1 } = await supabase.from('posts').insert({
-        content: filled[0],
-        user_id: user.id,
-        is_thread: true,
-        thread_position: 0,
-      }).select().single();
-      if (e1) throw e1;
+      const signature = JSON.stringify(filled);
+      if (attemptRef.current?.signature !== signature) {
+        attemptRef.current = { signature, ids: filled.map(() => crypto.randomUUID()) };
+      }
+      const ids = attemptRef.current.ids;
+      const headId = ids[0];
 
-      // Set thread_id to head's id
-      await supabase.from('posts').update({ thread_id: head.id }).eq('id', head.id);
-
-      // Insert subsequent posts referencing the head id
-      for (let i = 1; i < filled.length; i++) {
-        const { error } = await supabase.from('posts').insert({
-          content: filled[i],
+      // One statement: every post of the thread lands, or none does. A rate
+      // limit or any other failure leaves nothing half-posted.
+      const { error } = await supabase.from('posts').insert(
+        filled.map((content, i) => ({
+          id: ids[i],
+          content,
           user_id: user.id,
           is_thread: true,
-          thread_id: head.id,
+          thread_id: headId,
           thread_position: i,
-        });
-        if (error) throw error;
-      }
-      return head;
+        }))
+      );
+      // Duplicate key on a retry means the earlier attempt went through.
+      if (error && !isUniqueViolation(error)) throw error;
+      return { id: headId, count: filled.length };
     },
     onSuccess: (head) => {
-      qc.invalidateQueries({ queryKey: ['posts'] });
-      toast({ title: "thread posted", description: `${posts.filter(p => p.trim()).length} posts, in order.` });
+      attemptRef.current = null;
+      for (const root of FEED_QUERY_ROOTS) qc.invalidateQueries({ queryKey: [root] });
+      toast({ title: "thread posted", description: `${head.count} posts, in order.` });
       navigate(`/post/${head.id}`);
     },
-    onError: (e: Error) => toast({ title: "could not post the thread", description: e.message, variant: "destructive" })
+    onError: (e) => toast({
+      title: "could not post the thread",
+      description: e instanceof Error && !('code' in e)
+        ? e.message
+        : friendlyDbError(e, "nothing was posted. try again."),
+      variant: "destructive",
+    })
   });
 
   const filledCount = posts.filter(p => p.trim()).length;

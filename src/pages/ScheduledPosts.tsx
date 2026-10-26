@@ -7,15 +7,11 @@ import { useToast } from "@/hooks/use-toast";
 import { format } from "date-fns";
 import PageHeader from "@/components/layout/PageHeader";
 import EmptyState from "@/components/ui/empty-state";
+import { friendlyDbError } from "@/lib/dbErrors";
+import { FEED_QUERY_ROOTS } from "@/lib/postFeed";
+import type { Tables } from "@/integrations/supabase/types";
 
-interface ScheduledPost {
-  id: string;
-  content: string;
-  scheduled_for: string;
-  status: string;
-  media_urls: string[];
-  visibility: string;
-}
+type ScheduledPost = Tables<"scheduled_posts">;
 
 const ScheduledPosts = () => {
   const { user } = useAuth();
@@ -26,12 +22,14 @@ const ScheduledPosts = () => {
     queryKey: ['scheduled-posts', user?.id],
     queryFn: async () => {
       if (!user) return [];
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from('scheduled_posts')
         .select('*')
         .eq('user_id', user.id)
         .eq('status', 'pending')
-        .order('scheduled_for', { ascending: true });
+        .order('scheduled_for', { ascending: true })
+        .limit(200);
+      if (error) throw error;
       return data || [];
     },
     enabled: !!user
@@ -42,42 +40,60 @@ const ScheduledPosts = () => {
       const { error } = await supabase
         .from('scheduled_posts')
         .update({ status: 'cancelled' })
-        .eq('id', postId);
+        .eq('id', postId)
+        .eq('status', 'pending');
       if (error) throw error;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['scheduled-posts'] });
+      queryClient.invalidateQueries({ queryKey: ['room-rail'] });
       toast({ title: "cancelled. it will not send." });
-    }
+    },
+    onError: (e) => toast({ title: friendlyDbError(e, "could not cancel it. try again."), variant: "destructive" }),
   });
 
   const publishNow = useMutation({
     mutationFn: async (scheduledPost: ScheduledPost) => {
       if (!user) throw new Error("Not authenticated");
 
-      // Create the actual post
-      const { error: postError } = await supabase.from('posts').insert({
-        content: scheduledPost.content,
-        user_id: user.id,
-        media_urls: scheduledPost.media_urls,
-        visibility: scheduledPost.visibility
-      });
-
-      if (postError) throw postError;
-
-      // Mark scheduled post as published
-      const { error: updateError } = await supabase
+      // Claim it first, so the scheduled job (which publishes due posts on
+      // its own) and this button can never both send it.
+      const { data: claimed, error: claimError } = await supabase
         .from('scheduled_posts')
         .update({ status: 'published', published_at: new Date().toISOString() })
-        .eq('id', scheduledPost.id);
+        .eq('id', scheduledPost.id)
+        .eq('status', 'pending')
+        .select('id');
+      if (claimError) throw claimError;
+      if (!claimed || claimed.length === 0) return 'already';
 
-      if (updateError) throw updateError;
+      // Every column the two tables share, so nothing (circles, expiry) is lost.
+      const { error: postError } = await supabase.from('posts').insert({
+        user_id: user.id,
+        content: scheduledPost.content,
+        media_urls: scheduledPost.media_urls ?? [],
+        visibility: scheduledPost.visibility === 'circles' ? 'circle' : (scheduledPost.visibility ?? 'public'),
+        circle_ids: scheduledPost.circle_ids ?? [],
+        expires_at: scheduledPost.expires_at,
+      });
+
+      if (postError) {
+        // Put it back in the queue; it was never posted.
+        await supabase
+          .from('scheduled_posts')
+          .update({ status: 'pending', published_at: null })
+          .eq('id', scheduledPost.id);
+        throw postError;
+      }
+      return 'sent';
     },
-    onSuccess: () => {
+    onSuccess: (result) => {
       queryClient.invalidateQueries({ queryKey: ['scheduled-posts'] });
-      queryClient.invalidateQueries({ queryKey: ['posts'] });
-      toast({ title: "sent" });
-    }
+      queryClient.invalidateQueries({ queryKey: ['room-rail'] });
+      for (const root of FEED_QUERY_ROOTS) queryClient.invalidateQueries({ queryKey: [root] });
+      toast({ title: result === 'already' ? "it already went out." : "sent" });
+    },
+    onError: (e) => toast({ title: friendlyDbError(e, "could not send it. try again."), variant: "destructive" }),
   });
 
   const count = scheduledPosts?.length ?? 0;
@@ -86,7 +102,7 @@ const ScheduledPosts = () => {
     <DashboardLayout>
       <PageHeader
         title="scheduled"
-        subtitle={count > 0 ? `posts waiting for their time. ${count} in the queue.` : "posts waiting for their time."}
+        subtitle={count > 0 ? `posts waiting for their time. they go out on their own. ${count} in the queue.` : "posts waiting for their time. they go out on their own."}
       />
 
       {isLoading ? (
@@ -101,7 +117,7 @@ const ScheduledPosts = () => {
         </div>
       ) : scheduledPosts && scheduledPosts.length > 0 ? (
         <div className="stagger">
-          {(scheduledPosts as ScheduledPost[]).map((post, idx) => {
+          {scheduledPosts.map((post, idx) => {
             const sending = publishNow.isPending && publishNow.variables?.id === post.id;
             return (
               <div key={post.id} className="row px-5 sm:px-8 py-5" style={{ "--i": Math.min(idx, 8) } as React.CSSProperties}>
@@ -139,7 +155,7 @@ const ScheduledPosts = () => {
       ) : (
         <EmptyState
           title="nothing scheduled."
-          description="write a post and pick a time from the composer. it waits here until then."
+          description="write a post and pick a time from the composer. it waits here, then goes out on its own."
           actionLabel="write something"
           actionTo="/dashboard"
         />

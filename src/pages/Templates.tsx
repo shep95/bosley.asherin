@@ -18,11 +18,12 @@ const Templates = () => {
   const [touched, setTouched] = useState(false);
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
-  const { data: templates, isLoading } = useQuery({
+  const { data: templates, isLoading, isError, refetch } = useQuery({
     queryKey: ['templates', user?.id],
     queryFn: async () => {
       if (!user) return [];
-      const { data } = await supabase.from('post_templates').select('*').eq('user_id', user.id).order('created_at', { ascending: false });
+      const { data, error } = await supabase.from('post_templates').select('*').eq('user_id', user.id).order('created_at', { ascending: false });
+      if (error) throw error;
       return data || [];
     },
     enabled: !!user
@@ -40,7 +41,7 @@ const Templates = () => {
       setTouched(false);
       toast({ title: "template saved" });
     },
-    onError: (e: Error) => toast({ title: "could not save it", description: e.message, variant: "destructive" })
+    onError: () => toast({ title: "could not save it. try again.", variant: "destructive" })
   });
 
   const remove = useMutation({
@@ -51,7 +52,8 @@ const Templates = () => {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['templates'] });
       toast({ title: "template deleted" });
-    }
+    },
+    onError: () => toast({ title: "could not delete the template. try again.", variant: "destructive" })
   });
 
   const copy = (id: string, text: string) => {
@@ -138,6 +140,13 @@ const Templates = () => {
             </div>
           ))}
         </div>
+      ) : isError ? (
+        <EmptyState
+          title="your templates did not load."
+          description="nothing was lost. check your connection and try again."
+          actionLabel="try again"
+          onAction={() => { void refetch(); }}
+        />
       ) : (
         <EmptyState
           title="no templates yet."

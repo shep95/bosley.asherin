@@ -14,6 +14,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { friendlyDbError } from "@/lib/dbErrors";
 
 const SCOPES: Record<string, string> = {
   all: "everywhere",
@@ -34,11 +35,12 @@ const KeywordFiltersManager = () => {
     queryKey: ['keyword-filters', user?.id],
     queryFn: async () => {
       if (!user) return [];
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from('keyword_filters')
         .select('*')
         .eq('user_id', user.id)
         .order('created_at', { ascending: false });
+      if (error) throw error;
       return data || [];
     },
     enabled: !!user
@@ -58,7 +60,8 @@ const KeywordFiltersManager = () => {
       setNewPattern("");
       queryClient.invalidateQueries({ queryKey: ['keyword-filters'] });
       toast({ title: "filter added" });
-    }
+    },
+    onError: (e) => toast({ title: friendlyDbError(e, "could not add that filter. try again."), variant: "destructive" }),
   });
 
   const deleteFilter = useMutation({
@@ -68,7 +71,8 @@ const KeywordFiltersManager = () => {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['keyword-filters'] });
-    }
+    },
+    onError: (e) => toast({ title: friendlyDbError(e, "could not remove that filter. try again."), variant: "destructive" }),
   });
 
   const toggleFilter = useMutation({
@@ -76,7 +80,21 @@ const KeywordFiltersManager = () => {
       const { error } = await supabase.from('keyword_filters').update({ is_active: active }).eq('id', id);
       if (error) throw error;
     },
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['keyword-filters'] })
+    // Optimistic: the switch moves at once and moves back if the save fails.
+    onMutate: async ({ id, active }) => {
+      const key = ['keyword-filters', user?.id];
+      await queryClient.cancelQueries({ queryKey: key });
+      const previous = queryClient.getQueryData<typeof filters>(key);
+      if (previous) {
+        queryClient.setQueryData<typeof filters>(key, previous.map((f) => (f.id === id ? { ...f, is_active: active } : f)));
+      }
+      return { previous };
+    },
+    onError: (e, _vars, context) => {
+      if (context?.previous) queryClient.setQueryData(['keyword-filters', user?.id], context.previous);
+      toast({ title: friendlyDbError(e, "could not change that filter. try again."), variant: "destructive" });
+    },
+    onSettled: () => queryClient.invalidateQueries({ queryKey: ['keyword-filters'] })
   });
 
   const canAdd = !!newPattern.trim() && !addFilter.isPending;

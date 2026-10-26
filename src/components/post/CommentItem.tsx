@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import UserAvatar from "@/components/UserAvatar";
 import {
@@ -31,11 +31,10 @@ interface CommentItemProps {
   depth?: number;
   currentUserId?: string;
 
-  // Editing
+  // Editing. The draft text lives inside the item being edited, so typing
+  // re-renders that one item rather than the whole thread.
   editingCommentId: string | null;
-  editedCommentContent: string;
-  onEditedCommentContentChange: (value: string) => void;
-  onStartEdit: (commentId: string, currentContent: string) => void;
+  onStartEdit: (commentId: string) => void;
   onCancelEdit: () => void;
   onSaveEdit: (commentId: string, newContent: string) => void;
   isSavingEdit: boolean;
@@ -46,10 +45,8 @@ interface CommentItemProps {
   // Likes
   onLike: (commentId: string, isCurrentlyLiked: boolean) => void;
 
-  // Replies
+  // Replies (draft text is local, as above)
   replyingTo: string | null;
-  replyContent: string;
-  onReplyContentChange: (value: string) => void;
   onToggleReply: (commentId: string) => void;
   onSendReply: (parentId: string, content: string) => void;
   isSendingReply: boolean;
@@ -68,8 +65,6 @@ const CommentItemComponent = ({
   depth = 0,
   currentUserId,
   editingCommentId,
-  editedCommentContent,
-  onEditedCommentContentChange,
   onStartEdit,
   onCancelEdit,
   onSaveEdit,
@@ -77,8 +72,6 @@ const CommentItemComponent = ({
   onDelete,
   onLike,
   replyingTo,
-  replyContent,
-  onReplyContentChange,
   onToggleReply,
   onSendReply,
   isSendingReply,
@@ -87,6 +80,17 @@ const CommentItemComponent = ({
   const isOwner = currentUserId === comment.user_id;
   const isEditing = editingCommentId === comment.id;
   const isReplying = replyingTo === comment.id;
+  const [editedCommentContent, setEditedCommentContent] = useState("");
+  const [replyContent, setReplyContent] = useState("");
+
+  // Seed the edit box when editing starts; clear the reply box once the reply
+  // closes (sent or cancelled). A failed send keeps the text.
+  useEffect(() => {
+    if (isEditing) setEditedCommentContent(comment.content);
+  }, [isEditing, comment.content]);
+  useEffect(() => {
+    if (!isReplying) setReplyContent("");
+  }, [isReplying]);
   const name = comment.profiles?.display_name || comment.profiles?.username || "someone";
   const handle = comment.profiles?.username || "user";
   const canSendReply = replyContent.trim().length > 0 && !isSendingReply;
@@ -118,7 +122,7 @@ const CommentItemComponent = ({
                   </button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end" className="glass-panel rounded-md border min-w-[160px]">
-                  <DropdownMenuItem onClick={() => onStartEdit(comment.id, comment.content)} className="text-foreground/80 text-[13px]">
+                  <DropdownMenuItem onClick={() => onStartEdit(comment.id)} className="text-foreground/80 text-[13px]">
                     <Edit2 className="w-3.5 h-3.5 mr-2" /> edit
                   </DropdownMenuItem>
                   <DropdownMenuSeparator />
@@ -136,7 +140,7 @@ const CommentItemComponent = ({
               <textarea
                 id={`edit-${comment.id}`}
                 value={editedCommentContent}
-                onChange={(e) => onEditedCommentContentChange(e.target.value)}
+                onChange={(e) => setEditedCommentContent(e.target.value)}
                 maxLength={REPLY_MAX}
                 rows={2}
                 autoFocus
@@ -192,7 +196,7 @@ const CommentItemComponent = ({
               <textarea
                 id={`reply-${comment.id}`}
                 value={replyContent}
-                onChange={(e) => onReplyContentChange(e.target.value)}
+                onChange={(e) => setReplyContent(e.target.value)}
                 placeholder={`reply to ${name}.`}
                 maxLength={REPLY_MAX}
                 rows={1}
@@ -234,8 +238,6 @@ const CommentItemComponent = ({
                   depth={depth + 1}
                   currentUserId={currentUserId}
                   editingCommentId={editingCommentId}
-                  editedCommentContent={editedCommentContent}
-                  onEditedCommentContentChange={onEditedCommentContentChange}
                   onStartEdit={onStartEdit}
                   onCancelEdit={onCancelEdit}
                   onSaveEdit={onSaveEdit}
@@ -243,8 +245,6 @@ const CommentItemComponent = ({
                   onDelete={onDelete}
                   onLike={onLike}
                   replyingTo={replyingTo}
-                  replyContent={replyContent}
-                  onReplyContentChange={onReplyContentChange}
                   onToggleReply={onToggleReply}
                   onSendReply={onSendReply}
                   isSendingReply={isSendingReply}

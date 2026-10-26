@@ -14,6 +14,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Loader2 } from "lucide-react";
+import { friendlyDbError } from "@/lib/dbErrors";
 
 type RuleType = 'account_age' | 'follower_count' | 'following_count' | 'keyword' | 'temp_mute';
 
@@ -38,11 +39,12 @@ const BlockRulesManager = () => {
     queryKey: ['block-rules', user?.id],
     queryFn: async () => {
       if (!user) return [];
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from('block_rules')
         .select('*')
         .eq('user_id', user.id)
         .order('created_at', { ascending: false });
+      if (error) throw error;
       return data || [];
     },
     enabled: !!user
@@ -88,7 +90,8 @@ const BlockRulesManager = () => {
       setRuleValue("");
       queryClient.invalidateQueries({ queryKey: ['block-rules'] });
       toast({ title: "rule added" });
-    }
+    },
+    onError: (e) => toast({ title: friendlyDbError(e, "could not add that rule. try again."), variant: "destructive" }),
   });
 
   const deleteRule = useMutation({
@@ -99,7 +102,8 @@ const BlockRulesManager = () => {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['block-rules'] });
       toast({ title: "rule removed" });
-    }
+    },
+    onError: (e) => toast({ title: friendlyDbError(e, "could not remove that rule. try again."), variant: "destructive" }),
   });
 
   const toggleRule = useMutation({
@@ -107,7 +111,21 @@ const BlockRulesManager = () => {
       const { error } = await supabase.from('block_rules').update({ is_active: active }).eq('id', id);
       if (error) throw error;
     },
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['block-rules'] })
+    // Optimistic: the switch moves at once and moves back if the save fails.
+    onMutate: async ({ id, active }) => {
+      const key = ['block-rules', user?.id];
+      await queryClient.cancelQueries({ queryKey: key });
+      const previous = queryClient.getQueryData<typeof rules>(key);
+      if (previous) {
+        queryClient.setQueryData<typeof rules>(key, previous.map((r) => (r.id === id ? { ...r, is_active: active } : r)));
+      }
+      return { previous };
+    },
+    onError: (e, _vars, context) => {
+      if (context?.previous) queryClient.setQueryData(['block-rules', user?.id], context.previous);
+      toast({ title: friendlyDbError(e, "could not change that rule. try again."), variant: "destructive" });
+    },
+    onSettled: () => queryClient.invalidateQueries({ queryKey: ['block-rules'] })
   });
 
   const formatRuleDisplay = (rule: any) => {

@@ -8,7 +8,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { stripMetadata } from "@/lib/mediaSanitize";
 import { validateUpload, extensionForMime, ALLOWED_IMAGE_TYPES, MAX_FILE_SIZES } from "@/lib/sanitize";
 import { useStorageUrl } from "@/lib/storageUrl";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useInfiniteQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Camera, Loader2 } from "lucide-react";
@@ -17,6 +17,10 @@ import QAInbox from "@/components/qa/QAInbox";
 import PageHeader from "@/components/layout/PageHeader";
 import EmptyState from "@/components/ui/empty-state";
 import { pillTabsListClass, pillTabsTriggerClass } from "@/components/layout/PillTabs";
+import MemberCard from "@/components/MemberCard";
+import LoadMoreButton from "@/components/LoadMoreButton";
+import { fetchLikedPostsPage, fetchUserPostsPage } from "@/lib/profilePosts";
+import { FEED_QUERY_ROOTS, type FeedPost } from "@/lib/postFeed";
 
 const NAME_MAX = 50;
 const BIO_MAX = 160;
@@ -101,11 +105,13 @@ const Profile = () => {
     queryKey: ['profile', user?.id],
     queryFn: async () => {
       if (!user) return null;
-      const { data } = await supabase
+      // member_number is read-only: assigned by the database, never written here.
+      const { data, error } = await supabase
         .from('profiles')
-        .select('user_id, username, display_name, avatar_url, cover_url, bio, created_at, location, pronouns, website')
+        .select('user_id, username, display_name, avatar_url, cover_url, bio, created_at, location, pronouns, website, member_number')
         .eq('user_id', user.id)
         .maybeSingle();
+      if (error) throw error;
       return data;
     },
     enabled: !!user
@@ -114,111 +120,25 @@ const Profile = () => {
   // Covers live in the private "backgrounds" bucket; resolve to a signed URL.
   const coverUrl = useStorageUrl('backgrounds', profile?.cover_url);
 
-  // Fetch user's posts
-  const { data: posts, isLoading: loadingPosts } = useQuery({
+  // Your posts, 20 at a time, with counts from get_post_stats per page.
+  const postsQuery = useInfiniteQuery({
     queryKey: ['user-posts', user?.id],
-    queryFn: async () => {
-      if (!user) return [];
-
-      const { data: postsData } = await supabase
-        .from('posts')
-        .select('*')
-        .eq('user_id', user.id)
-        .order('created_at', { ascending: false });
-
-      if (!postsData) return [];
-
-      const postIds = postsData.map(p => p.id);
-
-      const { data: likesData } = await supabase
-        .from('post_likes')
-        .select('post_id')
-        .in('post_id', postIds);
-
-      const likesCountMap = new Map<string, number>();
-      likesData?.forEach(l => {
-        likesCountMap.set(l.post_id, (likesCountMap.get(l.post_id) || 0) + 1);
-      });
-
-      const { data: userLikes } = await supabase
-        .from('post_likes')
-        .select('post_id')
-        .eq('user_id', user.id)
-        .in('post_id', postIds);
-
-      const userLikedSet = new Set(userLikes?.map(l => l.post_id) || []);
-
-      const { data: userBookmarks } = await supabase
-        .from('bookmarks')
-        .select('post_id')
-        .eq('user_id', user.id)
-        .in('post_id', postIds);
-
-      const userBookmarkedSet = new Set(userBookmarks?.map(b => b.post_id) || []);
-
-      const { data: commentsData } = await supabase
-        .from('comments')
-        .select('post_id')
-        .in('post_id', postIds);
-
-      const commentsCountMap = new Map<string, number>();
-      commentsData?.forEach(c => {
-        commentsCountMap.set(c.post_id, (commentsCountMap.get(c.post_id) || 0) + 1);
-      });
-
-      return postsData.map(post => ({
-        ...post,
-        profiles: profile,
-        likesCount: likesCountMap.get(post.id) || 0,
-        commentsCount: commentsCountMap.get(post.id) || 0,
-        isLiked: userLikedSet.has(post.id),
-        isBookmarked: userBookmarkedSet.has(post.id),
-      }));
-    },
-    enabled: !!user && !!profile
+    queryFn: ({ pageParam }) => fetchUserPostsPage(user!.id, user!.id, pageParam),
+    initialPageParam: null as string | null,
+    getNextPageParam: (last) => last.nextCursor,
+    enabled: !!user,
   });
+  const posts = postsQuery.data?.pages.flatMap((p) => p.posts);
 
-  // Fetch liked posts
-  const { data: likedPosts, isLoading: loadingLiked } = useQuery({
+  // Liked posts, 20 likes at a time, newest like first.
+  const likedQuery = useInfiniteQuery({
     queryKey: ['liked-posts', user?.id],
-    queryFn: async () => {
-      if (!user) return [];
-
-      const { data: likes } = await supabase
-        .from('post_likes')
-        .select('post_id')
-        .eq('user_id', user.id);
-
-      if (!likes || likes.length === 0) return [];
-
-      const postIds = likes.map(l => l.post_id);
-      const { data: postsData } = await supabase
-        .from('posts')
-        .select('*')
-        .in('id', postIds)
-        .order('created_at', { ascending: false });
-
-      if (!postsData) return [];
-
-      const userIds = [...new Set(postsData.map(p => p.user_id))];
-      const { data: profiles } = await supabase
-        .from('profiles')
-        .select('user_id, username, display_name, avatar_url')
-        .in('user_id', userIds);
-
-      const profilesMap = new Map(profiles?.map(p => [p.user_id, p]) || []);
-
-      return postsData.map(post => ({
-        ...post,
-        profiles: profilesMap.get(post.user_id) || null,
-        likesCount: 0,
-        commentsCount: 0,
-        isLiked: true,
-        isBookmarked: false,
-      }));
-    },
-    enabled: !!user && activeTab === 'likes'
+    queryFn: ({ pageParam }) => fetchLikedPostsPage(user!.id, pageParam),
+    initialPageParam: null as string | null,
+    getNextPageParam: (last) => last.nextCursor,
+    enabled: !!user && activeTab === 'likes',
   });
+  const likedPosts = likedQuery.data?.pages.flatMap((p) => p.posts);
 
   // Fetch followers/following counts
   const { data: followStats } = useQuery({
@@ -226,20 +146,29 @@ const Profile = () => {
     queryFn: async () => {
       if (!user) return { followers: 0, following: 0 };
 
-      const { count: followers } = await supabase
-        .from('follows')
-        .select('*', { count: 'exact', head: true })
-        .eq('following_id', user.id);
-
-      const { count: following } = await supabase
-        .from('follows')
-        .select('*', { count: 'exact', head: true })
-        .eq('follower_id', user.id);
+      const [{ count: followers }, { count: following }] = await Promise.all([
+        supabase
+          .from('follows')
+          .select('*', { count: 'exact', head: true })
+          .eq('following_id', user.id),
+        supabase
+          .from('follows')
+          .select('*', { count: 'exact', head: true })
+          .eq('follower_id', user.id),
+      ]);
 
       return { followers: followers || 0, following: following || 0 };
     },
     enabled: !!user
   });
+
+  // Your name and photo are cached by the sidebar card, the composer, the
+  // reply line and every list that shows your posts.
+  const refreshOwnProfile = () => {
+    for (const root of ['profile', 'profile-background', 'profile-settings', 'composer-profile', 'my-avatar', 'user-profile', 'liked-posts', ...FEED_QUERY_ROOTS]) {
+      queryClient.invalidateQueries({ queryKey: [root] });
+    }
+  };
 
   // Update profile
   const updateProfile = useMutation({
@@ -252,7 +181,7 @@ const Profile = () => {
       if (error) throw error;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['profile'] });
+      refreshOwnProfile();
       setIsEditing(false);
       toast({ title: "profile saved" });
     },
@@ -268,7 +197,7 @@ const Profile = () => {
     const maxBytes = type === 'avatar' ? MAX_FILE_SIZES.avatar : MAX_FILE_SIZES.image;
     const validationError = await validateUpload(file, ALLOWED_IMAGE_TYPES, maxBytes);
     if (validationError) {
-      toast({ title: "Upload rejected", description: validationError, variant: "destructive" });
+      toast({ title: "that file will not work", description: validationError, variant: "destructive" });
       return;
     }
 
@@ -277,7 +206,7 @@ const Profile = () => {
     // Extension comes from the MIME type we validated, never from the filename.
     const fileExt = extensionForMime(clean.type) ?? extensionForMime(file.type);
     if (!fileExt) {
-      toast({ title: "Upload rejected", description: "That file type is not supported.", variant: "destructive" });
+      toast({ title: "that file will not work", description: "use a jpeg, png, gif or webp.", variant: "destructive" });
       return;
     }
     const fileName = `${user.id}/${type}-${Date.now()}.${fileExt}`;
@@ -288,7 +217,7 @@ const Profile = () => {
       .upload(fileName, clean, { contentType: clean.type });
 
     if (uploadError) {
-      toast({ title: "Upload failed", variant: "destructive" });
+      toast({ title: "upload failed. try again.", variant: "destructive" });
       return;
     }
 
@@ -300,12 +229,14 @@ const Profile = () => {
       .eq('user_id', user.id);
 
     if (updateError) {
-      toast({ title: "Could not save image", variant: "destructive" });
+      // Do not leave an orphaned upload behind a failed save.
+      void supabase.storage.from(bucket).remove([fileName]);
+      toast({ title: "could not save the image. try again.", variant: "destructive" });
       return;
     }
 
-    queryClient.invalidateQueries({ queryKey: ['profile'] });
-    toast({ title: `${type === 'avatar' ? 'Avatar' : 'Cover'} updated` });
+    refreshOwnProfile();
+    toast({ title: `${type === 'avatar' ? 'photo' : 'cover'} updated` });
   };
 
   const startEditing = () => {
@@ -330,34 +261,41 @@ const Profile = () => {
   const revealOnHover =
     "opacity-100 sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100 focus-visible:opacity-100 transition-opacity duration-200 ease-soft";
 
-  type CardPost = React.ComponentProps<typeof PostCard>["post"] & {
-    likesCount: number;
-    commentsCount: number;
-    isLiked: boolean;
-    isBookmarked: boolean;
-  };
-
   const renderPosts = (
-    list: CardPost[] | undefined,
-    loading: boolean,
+    list: FeedPost[] | undefined,
+    query: { isLoading: boolean; isError: boolean; hasNextPage: boolean; isFetchingNextPage: boolean; fetchNextPage: () => unknown },
     empty: { title: string; description: string; actionLabel?: string; actionTo?: string },
   ) => {
-    if (loading) return <FeedSkeleton count={3} />;
+    if (query.isLoading) return <FeedSkeleton count={3} />;
+    if (query.isError && !list?.length) {
+      return <EmptyState title="could not load these." description="check your connection and try again." />;
+    }
     if (!list || list.length === 0) return <EmptyState {...empty} />;
     return (
-      <div className="stagger">
-        {list.map((post, idx) => (
-          <div key={post.id} style={{ "--i": Math.min(idx, 8) } as React.CSSProperties}>
-            <PostCard
-              post={post}
-              likesCount={post.likesCount}
-              commentsCount={post.commentsCount}
-              isLiked={post.isLiked}
-              isBookmarked={post.isBookmarked}
-            />
-          </div>
-        ))}
-      </div>
+      <>
+        <div className="stagger">
+          {list.map((post, idx) => (
+            <div key={post.id} style={{ "--i": Math.min(idx, 8) } as React.CSSProperties}>
+              <PostCard
+                post={post}
+                likesCount={post.likesCount}
+                commentsCount={post.commentsCount}
+                isLiked={post.isLiked}
+                isBookmarked={post.isBookmarked}
+                repostCount={post.repostCount}
+                isReposted={post.isReposted}
+                hasPoll={post.hasPoll}
+                quotedPost={post.quotedPost}
+              />
+            </div>
+          ))}
+        </div>
+        <LoadMoreButton
+          hasMore={query.hasNextPage}
+          loading={query.isFetchingNextPage}
+          onClick={() => { void query.fetchNextPage(); }}
+        />
+      </>
     );
   };
 
@@ -369,14 +307,14 @@ const Profile = () => {
         ref={coverInputRef}
         type="file"
         accept={ALLOWED_IMAGE_TYPES.join(',')}
-        onChange={(e) => e.target.files?.[0] && uploadImage(e.target.files[0], 'cover')}
+        onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ""; if (f) void uploadImage(f, 'cover'); }}
         className="hidden"
       />
       <input
         ref={avatarInputRef}
         type="file"
         accept={ALLOWED_IMAGE_TYPES.join(',')}
-        onChange={(e) => e.target.files?.[0] && uploadImage(e.target.files[0], 'avatar')}
+        onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ""; if (f) void uploadImage(f, 'avatar'); }}
         className="hidden"
       />
 
@@ -409,7 +347,8 @@ const Profile = () => {
                   type="button"
                   onClick={() => avatarInputRef.current?.click()}
                   aria-label="change photo"
-                  className={`quiet absolute -bottom-1 -right-1 p-1.5 rounded-full bg-background/80 ring-1 ring-foreground/10 ${revealOnHover}`}
+                  // The visible chip is small; the invisible ::after gives a 42px target.
+                  className={`quiet absolute -bottom-1 -right-1 p-1.5 rounded-full bg-background/80 ring-1 ring-foreground/10 after:absolute after:-inset-2 after:content-[''] ${revealOnHover}`}
                 >
                   <Camera className="w-3.5 h-3.5" />
                 </button>
@@ -501,6 +440,18 @@ const Profile = () => {
             </div>
           </div>
 
+          {profile?.username && (
+            <div className="px-5 sm:px-8 pb-6">
+              <MemberCard
+                size="full"
+                username={profile.username}
+                displayName={profile.display_name}
+                memberNumber={profile.member_number}
+                joinedAt={profile.created_at}
+              />
+            </div>
+          )}
+
           <Tabs value={activeTab} onValueChange={setActiveTab}>
             <div className="px-5 sm:px-8 pt-2">
               <TabsList className={pillTabsListClass}>
@@ -511,7 +462,7 @@ const Profile = () => {
             </div>
 
             <TabsContent value="posts" className="mt-0">
-              {renderPosts(posts, loadingPosts, {
+              {renderPosts(posts, postsQuery, {
                 title: "nothing posted yet.",
                 description: "what you write shows up here, newest first.",
                 actionLabel: "write something",
@@ -524,7 +475,7 @@ const Profile = () => {
             </TabsContent>
 
             <TabsContent value="likes" className="mt-0">
-              {renderPosts(likedPosts, loadingLiked, {
+              {renderPosts(likedPosts, likedQuery, {
                 title: "no likes yet.",
                 description: "posts you like are kept here. only you can see this list.",
                 actionLabel: "read the feed",

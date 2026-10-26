@@ -1,4 +1,3 @@
-import { useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import DashboardLayout from "@/components/layout/DashboardLayout";
 import UserAvatar from "@/components/UserAvatar";
@@ -8,6 +7,8 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Loader2, X } from "lucide-react";
 import PageHeader from "@/components/layout/PageHeader";
 import EmptyState from "@/components/ui/empty-state";
+import { useToast } from "@/hooks/use-toast";
+import { useUnread, useNotificationPermission, unreadQueryKey, type UnreadCounts } from "@/hooks/useUnread";
 
 interface Notification {
   id: string;
@@ -63,16 +64,22 @@ const Notifications = () => {
   const { user } = useAuth();
   const queryClient = useQueryClient();
 
-  // Fetch notifications
-  const { data: notifications, isLoading } = useQuery({
-    queryKey: ['notifications', user?.id],
+  const userId = user?.id;
+  const { toast } = useToast();
+  const { counts, refresh: refreshUnread } = useUnread();
+  const { permission, requestPermission } = useNotificationPermission();
+
+  // Fetch notifications. Realtime invalidation of ['notifications', userId]
+  // comes from UnreadProvider, so this page opens no channel of its own.
+  const { data: notifications, isLoading, isError, refetch, isRefetching } = useQuery({
+    queryKey: ['notifications', userId],
     queryFn: async () => {
-      if (!user) return [];
+      if (!userId) return [];
 
       const { data, error } = await supabase
         .from('notifications')
         .select('*')
-        .eq('user_id', user.id)
+        .eq('user_id', userId)
         .order('created_at', { ascending: false })
         .limit(50);
 
@@ -80,96 +87,79 @@ const Notifications = () => {
 
       // Fetch actor profiles
       const actorIds = [...new Set(data?.map(n => n.actor_id) || [])];
-      const { data: profiles } = await supabase
-        .from('profiles')
-        .select('user_id, username, display_name, avatar_url')
-        .in('user_id', actorIds);
-
-      const profilesMap = new Map(profiles?.map(p => [p.user_id, p]) || []);
+      const profilesMap = new Map<string, Notification['actor'] & { user_id: string }>();
+      if (actorIds.length > 0) {
+        const { data: profiles } = await supabase
+          .from('profiles')
+          .select('user_id, username, display_name, avatar_url')
+          .in('user_id', actorIds);
+        profiles?.forEach(p => profilesMap.set(p.user_id, p));
+      }
 
       return data?.map(n => ({
         ...n,
         actor: profilesMap.get(n.actor_id)
       })) as Notification[];
     },
-    enabled: !!user
+    enabled: !!userId
   });
 
-  // Subscribe to realtime notifications
-  const userId = user?.id;
-  useEffect(() => {
-    if (!userId) return;
-
-    const channel = supabase
-      .channel(`notifications-${userId}`)
-      .on(
-        'postgres_changes',
-        {
-          event: 'INSERT',
-          schema: 'public',
-          table: 'notifications',
-          filter: `user_id=eq.${userId}`
-        },
-        () => {
-          queryClient.invalidateQueries({ queryKey: ['notifications', userId] });
-        }
-      )
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, [userId, queryClient]);
+  const afterChange = () => {
+    void queryClient.invalidateQueries({ queryKey: ['notifications', userId] });
+    void refreshUnread();
+  };
+  const failed = (title: string) => () => toast({ title, variant: "destructive" });
 
   // Mark notification as read
   const markAsRead = useMutation({
     mutationFn: async (notificationId: string) => {
-      if (!user) throw new Error("Not authenticated");
+      if (!userId) throw new Error("not signed in");
       const { error } = await supabase
         .from('notifications')
         .update({ read: true })
         .eq('id', notificationId)
-        .eq('user_id', user.id);
+        .eq('user_id', userId);
 
       if (error) throw error;
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['notifications'] });
-    }
+    onSuccess: afterChange,
+    onError: failed("could not mark that read."),
   });
 
-  // Mark all as read
+  // Mark all as read: every unread row, not just the 50 on screen.
   const markAllAsRead = useMutation({
     mutationFn: async () => {
-      if (!user) return;
+      if (!userId) throw new Error("not signed in");
       const { error } = await supabase
         .from('notifications')
         .update({ read: true })
-        .eq('user_id', user.id)
+        .eq('user_id', userId)
         .eq('read', false);
 
       if (error) throw error;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['notifications'] });
-    }
+      queryClient.setQueryData<Notification[]>(['notifications', userId], (prev) => prev?.map(n => ({ ...n, read: true })));
+      queryClient.setQueryData<UnreadCounts>(unreadQueryKey(userId), (prev) => (prev ? { ...prev, notifications: 0 } : prev));
+      afterChange();
+    },
+    onError: failed("could not mark all read. try again."),
   });
 
   // Delete notification
   const deleteNotification = useMutation({
     mutationFn: async (notificationId: string) => {
-      if (!user) throw new Error("Not authenticated");
+      if (!userId) throw new Error("not signed in");
       const { error } = await supabase
         .from('notifications')
         .delete()
         .eq('id', notificationId)
-        .eq('user_id', user.id);
+        .eq('user_id', userId);
 
       if (error) throw error;
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['notifications'] });
-    }
+    onSuccess: afterChange,
+    onError: failed("could not dismiss that."),
   });
 
   const handleNotificationClick = async (notification: Notification) => {
@@ -186,29 +176,55 @@ const Notifications = () => {
     }
   };
 
-  const unreadCount = notifications?.filter(n => !n.read).length || 0;
+  // The server count covers every unread row, not just the 50 loaded here.
+  const unreadCount = counts.notifications;
+  const canAskAlerts = permission === "default";
 
   return (
     <DashboardLayout>
       <PageHeader
         title="notifications"
-        subtitle={unreadCount > 0 ? `${unreadCount} unread` : "all quiet."}
+        subtitle={isError ? "could not load." : unreadCount > 0 ? `${unreadCount} unread` : "all quiet."}
         actions={
-          unreadCount > 0 ? (
-            <button
-              onClick={() => markAllAsRead.mutate()}
-              disabled={markAllAsRead.isPending}
-              className="quiet inline-flex items-center gap-2 h-10 px-2 -mr-2 rounded-md text-[13px] font-light"
-            >
-              {markAllAsRead.isPending && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
-              mark all read
-            </button>
+          canAskAlerts || unreadCount > 0 ? (
+            <span className="flex items-center gap-1 -mr-2">
+              {canAskAlerts && (
+                <button
+                  onClick={() => { void requestPermission(); }}
+                  className="quiet inline-flex items-center h-10 px-2 rounded-md text-[13px] font-light"
+                >
+                  turn on alerts
+                </button>
+              )}
+              {unreadCount > 0 && (
+                <button
+                  onClick={() => markAllAsRead.mutate()}
+                  disabled={markAllAsRead.isPending}
+                  className="quiet inline-flex items-center gap-2 h-10 px-2 rounded-md text-[13px] font-light"
+                >
+                  {markAllAsRead.isPending && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                  mark all read
+                </button>
+              )}
+            </span>
           ) : null
         }
       />
 
       {isLoading ? (
         <NotificationSkeleton />
+      ) : isError ? (
+        <div className="px-5 sm:px-8 py-10">
+          <p className="text-[14px] font-light text-foreground/60">notifications did not load.</p>
+          <button
+            onClick={() => { void refetch(); }}
+            disabled={isRefetching}
+            className="mt-2 -ml-1 inline-flex items-center gap-2 h-10 px-1 text-[14px] font-light text-foreground hover:text-signal transition-colors"
+          >
+            {isRefetching && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+            try again
+          </button>
+        </div>
       ) : notifications && notifications.length > 0 ? (
         <div className="stagger">
           {notifications.map((notification, idx) => {

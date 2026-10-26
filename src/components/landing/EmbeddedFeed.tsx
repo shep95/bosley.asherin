@@ -4,10 +4,14 @@ import { useAuth } from "@/hooks/useAuth";
 import { RefreshCw, ArrowUpRight } from "lucide-react";
 import PostCard from "@/components/feed/PostCard";
 import FeedSkeleton from "@/components/feed/FeedSkeleton";
+import { enrichPosts } from "@/lib/postFeed";
 
 /**
  * The room, live, on the landing page. Signed-out visitors read the latest
  * public posts through a capped RPC; signed-in visitors see their own feed.
+ * Storage is private and cannot be signed without a session, so signed-out
+ * cards describe their media ("1 photo · sign in to see it") instead of
+ * showing a tile that can never load.
  */
 const EmbeddedFeed = ({ onOpenAuth }: { onOpenAuth?: (tab: "login" | "signup") => void }) => {
   const { user } = useAuth();
@@ -16,7 +20,8 @@ const EmbeddedFeed = ({ onOpenAuth }: { onOpenAuth?: (tab: "login" | "signup") =
     queryKey: ["embedded-feed", user?.id ?? "anon"],
     queryFn: async () => {
       if (!user) {
-        const { data } = await supabase.rpc("get_public_preview_posts");
+        const { data, error } = await supabase.rpc("get_public_preview_posts");
+        if (error) throw error;
         return (data ?? []).map((row) => ({
           id: row.id,
           user_id: row.user_id,
@@ -28,33 +33,19 @@ const EmbeddedFeed = ({ onOpenAuth }: { onOpenAuth?: (tab: "login" | "signup") =
           profiles: { user_id: row.user_id, username: row.username, display_name: row.display_name, avatar_url: row.avatar_url },
           likesCount: Number(row.likes_count) || 0,
           commentsCount: Number(row.comments_count) || 0,
+          repostCount: 0,
           isLiked: false,
+          isReposted: false,
           isBookmarked: false,
+          hasPoll: false,
+          quotedPost: null,
         }));
       }
 
-      const { data: rawPosts } = await supabase.from("posts").select("*").order("created_at", { ascending: false }).limit(20);
+      const { data: rawPosts, error } = await supabase.from("posts").select("*").order("created_at", { ascending: false }).limit(20);
+      if (error) throw error;
       const list = (rawPosts ?? []).filter((p) => !p.expires_at || new Date(p.expires_at) > new Date());
-      const userIds = [...new Set(list.map((p) => p.user_id))];
-      const ids = list.map((p) => p.id);
-      const [{ data: profiles }, { data: engagement }, { data: ul }, { data: ub }] = await Promise.all([
-        supabase.from("profiles").select("user_id, username, display_name, avatar_url").in("user_id", userIds),
-        supabase.rpc("get_post_engagement", { post_ids: ids }),
-        supabase.from("post_likes").select("post_id").eq("user_id", user.id).in("post_id", ids),
-        supabase.from("bookmarks").select("post_id").eq("user_id", user.id).in("post_id", ids),
-      ]);
-      const pmap = new Map((profiles ?? []).map((p) => [p.user_id, p]));
-      const eng = new Map((engagement ?? []).map((e) => [e.post_id, e]));
-      const likedSet = new Set((ul ?? []).map((x) => x.post_id));
-      const bmSet = new Set((ub ?? []).map((x) => x.post_id));
-      return list.map((p) => ({
-        ...p,
-        profiles: pmap.get(p.user_id) ?? null,
-        likesCount: Number(eng.get(p.id)?.likes_count) || 0,
-        commentsCount: Number(eng.get(p.id)?.comments_count) || 0,
-        isLiked: likedSet.has(p.id),
-        isBookmarked: bmSet.has(p.id),
-      }));
+      return enrichPosts(list, user.id);
     },
     refetchInterval: 60_000,
   });
@@ -65,7 +56,7 @@ const EmbeddedFeed = ({ onOpenAuth }: { onOpenAuth?: (tab: "login" | "signup") =
         <p className="flex items-center gap-2 text-[11px] font-light uppercase tracking-[0.24em] text-foreground/45">
           <span className="w-1 h-1 rounded-full bg-signal" /> live · {user ? "your feed" : "public posts"}
         </p>
-        <button onClick={() => refetch()} disabled={isFetching} aria-label="refresh" className="quiet p-1.5 rounded-md">
+        <button onClick={() => refetch()} disabled={isFetching} aria-label="refresh" className="quiet p-2.5 -m-1 rounded-md">
           <RefreshCw className={`w-3.5 h-3.5 ${isFetching ? "animate-spin" : ""}`} />
         </button>
       </div>
@@ -78,12 +69,16 @@ const EmbeddedFeed = ({ onOpenAuth }: { onOpenAuth?: (tab: "login" | "signup") =
             {posts.map((post, idx) => (
               <div key={post.id} style={{ "--i": Math.min(idx, 8) } as React.CSSProperties}>
                 <PostCard
-                  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                  post={post as any}
+                  post={post}
                   likesCount={post.likesCount}
                   commentsCount={post.commentsCount}
+                  repostCount={post.repostCount}
                   isLiked={post.isLiked}
+                  isReposted={post.isReposted}
                   isBookmarked={post.isBookmarked}
+                  hasPoll={post.hasPoll}
+                  quotedPost={post.quotedPost}
+                  anonymous={!user}
                 />
               </div>
             ))}

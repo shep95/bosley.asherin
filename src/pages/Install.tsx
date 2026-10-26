@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Download, ArrowLeft, Check } from "lucide-react";
 import { Link } from "react-router-dom";
-import { Helmet } from "react-helmet-async";
+import { Helmet } from "@/components/Head";
 import backgroundWallpaper from "@/assets/background-wallpaper.webp";
 
 interface BeforeInstallPromptEvent extends Event {
@@ -65,8 +65,8 @@ const Install = () => {
           name="description"
           content="install bosley as an app on iphone, android or desktop. full-screen, fast, and drafts keep working offline."
         />
-        <link rel="canonical" href="https://bosley.app/install" />
-        <meta property="og:url" content="https://bosley.app/install" />
+        <link rel="canonical" href="https://bosley.asherin.com/install" />
+        <meta property="og:url" content="https://bosley.asherin.com/install" />
         <meta property="og:title" content="install bosley" />
         <meta property="og:description" content="add bosley to your device for a full-screen app experience." />
       </Helmet>
@@ -90,11 +90,11 @@ const Install = () => {
 
           <div className="mt-20 sm:mt-28 grid lg:grid-cols-12 gap-12 lg:gap-16 items-start">
             <div className="lg:col-span-7">
-              <p className="text-foreground/40 text-[11px] font-light tracking-[0.28em] uppercase mb-8">install</p>
+              <p className="eyebrow mb-8">install</p>
               <h1 className="text-[clamp(2.5rem,7vw,5.5rem)] font-extralight text-foreground leading-[0.95] tracking-[-0.045em]">
                 the room,
                 <br />
-                <span className="font-thin text-foreground/70">on your home screen.</span>
+                <span className="font-display italic tracking-[-0.015em] text-foreground/75">on your home screen.</span>
               </h1>
               <p className="mt-10 text-foreground/55 font-light max-w-md leading-relaxed">
                 bosley installs as an app. no store, no download size. it opens full-screen, loads from your device, and
@@ -130,7 +130,8 @@ const Install = () => {
                     key={p}
                     type="button"
                     onClick={() => setPlatform(p)}
-                    className={`transition-colors ${p === platform ? "text-foreground" : "hover:text-foreground/70"}`}
+                    aria-pressed={p === platform}
+                    className={`py-3 -my-3 transition-colors ${p === platform ? "text-foreground" : "hover:text-foreground/70"}`}
                   >
                     {STEPS[p].title}
                   </button>

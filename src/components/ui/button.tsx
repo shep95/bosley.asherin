@@ -9,7 +9,7 @@ import { cn } from "@/lib/utils";
  * (`signal`) for the commitment of a page; everything else is quiet.
  */
 const buttonVariants = cva(
-  "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-[14px] font-light ring-offset-background transition-all duration-200 ease-soft active:scale-[0.98] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-foreground/40 focus-visible:ring-offset-0 disabled:pointer-events-none disabled:opacity-40 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0",
+  "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-[14px] font-light ring-offset-background transition-[transform,filter,background-color,color,box-shadow] duration-200 ease-soft active:scale-[0.97] disabled:pointer-events-none disabled:opacity-40 disabled:saturate-0 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0",
   {
     variants: {
       variant: {
@@ -19,8 +19,8 @@ const buttonVariants = cva(
         secondary: "bg-foreground/[0.06] text-foreground hover:bg-foreground/[0.1]",
         ghost: "text-foreground/70 hover:text-foreground hover:bg-foreground/[0.05]",
         link: "text-foreground underline-offset-4 hover:underline",
-        /* High-commitment action: solid, warm, unmistakably the next step. */
-        signal: "bg-signal text-signal-foreground font-medium hover:bg-signal/90",
+        /* High-commitment action: gold as a metal, lit from above. */
+        signal: "btn-gold font-medium tracking-[-0.005em]",
         /* Kept for callers; reads as a quiet outline now. */
         glass: "border border-foreground/15 bg-transparent text-foreground/80 hover:text-foreground hover:bg-foreground/[0.04]",
       },

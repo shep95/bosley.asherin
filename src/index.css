@@ -1,5 +1,9 @@
 /* Self-hosted Inter (variable weight). No third-party font request, no render-blocking CSS, no IP leak. */
 @import "@fontsource-variable/inter";
+/* Display serif for the moments that should feel printed: page titles, names on
+   a profile, the member card. Latin subset only (about 30 KB for both styles). */
+@import "@fontsource/instrument-serif/latin-400.css";
+@import "@fontsource/instrument-serif/latin-400-italic.css";
 
 @tailwind base;
 @tailwind components;
@@ -7,6 +11,7 @@
 
 @layer base {
   :root {
+    --grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 0.03 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
     /* Layered blacks: background, surface, shadow — different temperatures
        of the same absence. Cold (hue 222) at very low saturation. */
     --background: 222 18% 3%;
@@ -50,16 +55,21 @@
 
     /* Elevation surfaces — readable scrims that sit over the wallpaper.
        Depth is communicated by opacity + blur, never by hue shifts. */
-    --surface-1: 222 16% 4% / 0.55;
-    --surface-2: 222 16% 5% / 0.7;
-    --surface-3: 222 16% 5% / 0.86;
+    --surface-1: 222 16% 4% / 0.72;
+    --surface-2: 223 16% 4.5% / 0.86;
+    --surface-3: 223 16% 5% / 0.92;
     --hairline: 220 20% 100% / 0.07;
     --hairline-strong: 220 20% 100% / 0.14;
 
-    /* Signal accent — warm amber, pulled from the wallpaper.
-       Warm hues read as approachable; reserved for state, never decoration. */
-    --signal: 41 96% 62%;
-    --signal-foreground: 0 0% 8%;
+    /* Signal accent: champagne gold. One accent, used only where a person
+       commits (post, send, save, follow) or where something is theirs
+       (unread mark, the active room, their member number). Rendered as a
+       metal, not a flat colour: three stops and a lit top edge. */
+    --signal: 42 74% 64%;
+    --signal-foreground: 36 60% 8%;
+    --gold-hi: 45 92% 86%;
+    --gold-mid: 41 70% 62%;
+    --gold-lo: 35 58% 40%;
 
     /* Motion — one easing family so the whole product feels like one hand. */
     --ease-out-soft: cubic-bezier(0.22, 1, 0.36, 1);
@@ -82,6 +92,11 @@
 @layer base {
   * {
     @apply border-border;
+  }
+
+  ::selection {
+    background: hsl(var(--gold-mid) / 0.32);
+    color: hsl(var(--foreground));
   }
 
   body {
@@ -117,10 +132,11 @@
 }
 
 @layer components {
+  /* No live backdrop blur on anything that scrolls: re-blurring a fixed
+     wallpaper under a moving surface costs a full repaint per frame on
+     phones. Surfaces are dense enough to read without it. */
   .glass {
-    background: hsl(var(--glass-bg));
-    backdrop-filter: blur(var(--glass-blur));
-    -webkit-backdrop-filter: blur(var(--glass-blur));
+    background: hsl(var(--surface-1));
     border: 1px solid hsl(var(--glass-border));
   }
 
@@ -128,8 +144,6 @@
      wallpaper, still translucent enough to feel like one continuous space. */
   .glass-card {
     background: hsl(var(--surface-1));
-    backdrop-filter: blur(18px) saturate(115%);
-    -webkit-backdrop-filter: blur(18px) saturate(115%);
     border: 1px solid hsl(var(--hairline));
     box-shadow: var(--shadow-card);
     transition:
@@ -142,29 +156,39 @@
   /* Chrome surface: headers, sidebars, sheets — denser, sits above content. */
   .glass-panel {
     background: hsl(var(--surface-3));
-    backdrop-filter: blur(24px) saturate(120%);
-    -webkit-backdrop-filter: blur(24px) saturate(120%);
+    backdrop-filter: blur(16px) saturate(120%);
+    -webkit-backdrop-filter: blur(16px) saturate(120%);
     border-color: hsl(var(--hairline));
   }
 
   /* The wallpaper, cooled. Warm gold streaks pulled down toward the blacks so
      type sits on darkness, not on a photograph. One treatment everywhere. */
+  /* The grade (desaturate, darken, a touch of contrast) is baked into the
+     image file; a CSS filter on a full-viewport image re-rasterises on
+     resize and zoom for no visual gain. */
   .wallpaper {
-    filter: saturate(0.6) brightness(0.68) contrast(1.05);
+    filter: none;
   }
+  /* Grain is painted into the static layers (this fixed scrim and the room
+     surface), never as an overlay above the page: an overlay over scrolling
+     content is re-blended every frame, a background is rasterised once.
+     Flat digital black reads as cheap; grain reads as material. */
   .wallpaper-scrim {
     background:
+      var(--grain),
       radial-gradient(120% 80% at 70% 0%, hsl(222 18% 3% / 0.2), hsl(222 18% 3% / 0.75) 60%),
       linear-gradient(to bottom, hsl(222 18% 3% / 0.55), hsl(222 18% 3% / 0.9));
   }
 
   /* A room: the reading column. One surface, hairline edges, no box shadows. */
   .room {
-    background: hsl(var(--surface-2));
+    background:
+      var(--grain),
+      linear-gradient(180deg, hsl(220 20% 100% / 0.025), transparent 240px),
+      hsl(var(--surface-2));
     border-left: 1px solid hsl(var(--hairline));
     border-right: 1px solid hsl(var(--hairline));
-    backdrop-filter: blur(20px) saturate(110%);
-    -webkit-backdrop-filter: blur(20px) saturate(110%);
+    box-shadow: 0 0 0 1px hsl(0 0% 0% / 0.4);
   }
   /* Rows inside a room are separated by hairlines, never boxed. */
   .row {
@@ -198,7 +222,7 @@
     position: absolute;
     left: 0; right: 0; bottom: -1px;
     height: 1px;
-    background: hsl(var(--foreground));
+    background: linear-gradient(90deg, hsl(var(--gold-lo)), hsl(var(--gold-hi)) 50%, hsl(var(--gold-lo)));
     transform: scaleX(0);
     transform-origin: left;
     transition: transform var(--dur-base) var(--ease-out-soft);
@@ -221,8 +245,133 @@
   .glass-inset {
     background: hsl(0 0% 100% / 0.035);
     border: 1px solid hsl(var(--hairline));
-    backdrop-filter: blur(10px);
-    -webkit-backdrop-filter: blur(10px);
+  }
+
+  /* ---- premium primitives ---------------------------------------- */
+
+  /* Display type: the printed voice. Page titles, names, numbers that matter. */
+  .font-display {
+    font-family: 'Instrument Serif', ui-serif, Georgia, 'Times New Roman', serif;
+    font-weight: 400;
+    letter-spacing: -0.012em;
+    font-feature-settings: 'liga', 'kern';
+  }
+
+  /* Gold as a metal: a lit top edge, a darker foot, a slow sheen on hover. */
+  .btn-gold {
+    position: relative;
+    isolation: isolate;
+    overflow: hidden;
+    color: hsl(var(--signal-foreground));
+    background: linear-gradient(180deg, hsl(var(--gold-hi)) 0%, hsl(var(--gold-mid)) 46%, hsl(var(--gold-lo)) 100%);
+    box-shadow:
+      inset 0 1px 0 hsl(48 100% 94% / 0.75),
+      inset 0 -1px 0 hsl(30 60% 22% / 0.55),
+      0 1px 2px hsl(0 0% 0% / 0.5),
+      0 10px 30px -12px hsl(41 90% 55% / 0.55);
+    text-shadow: 0 1px 0 hsl(48 100% 90% / 0.35);
+  }
+  .btn-gold::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    background: linear-gradient(105deg, transparent 30%, hsl(50 100% 96% / 0.55) 48%, transparent 66%);
+    transform: translateX(-120%);
+    transition: transform 900ms var(--ease-out-soft);
+  }
+  @media (hover: hover) {
+    .btn-gold:hover::after { transform: translateX(120%); }
+    .btn-gold:hover { filter: brightness(1.04); }
+  }
+
+  /* Gold lettering for the few words that belong to the person. */
+  .text-gold {
+    background: linear-gradient(180deg, hsl(var(--gold-hi)), hsl(var(--gold-mid)) 55%, hsl(var(--gold-lo)));
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+
+  /* A hairline that catches light in the middle and fades at the ends. */
+  .rule-lit {
+    height: 1px;
+    border: 0;
+    background: linear-gradient(90deg, transparent, hsl(220 20% 100% / 0.16) 30%, hsl(var(--gold-mid) / 0.35) 50%, hsl(220 20% 100% / 0.16) 70%, transparent);
+  }
+
+  /* Small caps label: the engraved voice used for section names. */
+  .eyebrow {
+    font-size: 10.5px;
+    font-weight: 400;
+    letter-spacing: 0.32em;
+    text-transform: uppercase;
+    color: hsl(var(--foreground) / 0.42);
+  }
+
+  /* Numerals that line up, like a statement. */
+  .num {
+    font-variant-numeric: tabular-nums lining-nums;
+    font-feature-settings: 'tnum', 'lnum';
+  }
+
+  /* The member card: black metal, an engraved number, light that moves with
+     the pointer (one CSS variable, set on pointermove). */
+  .member-card {
+    --mx: 30%;
+    --my: 0%;
+    position: relative;
+    overflow: hidden;
+    border-radius: 14px;
+    background:
+      radial-gradient(120% 90% at var(--mx) var(--my), hsl(42 60% 70% / 0.10), transparent 55%),
+      linear-gradient(155deg, hsl(225 10% 11%), hsl(228 12% 5%) 60%, hsl(230 14% 3%));
+    border: 1px solid hsl(220 20% 100% / 0.09);
+    box-shadow:
+      inset 0 1px 0 hsl(220 20% 100% / 0.08),
+      0 1px 2px hsl(0 0% 0% / 0.6),
+      0 30px 60px -30px hsl(0 0% 0% / 0.9);
+  }
+  .member-card::before {
+    /* brushed-metal striation */
+    content: "";
+    position: absolute;
+    inset: 0;
+    opacity: 0.35;
+    background: repeating-linear-gradient(90deg, hsl(0 0% 100% / 0.018) 0 1px, transparent 1px 3px);
+    pointer-events: none;
+  }
+  .member-card::after {
+    /* gold edge on the top rim */
+    content: "";
+    position: absolute;
+    left: 10%;
+    right: 10%;
+    top: 0;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, hsl(var(--gold-mid) / 0.6), transparent);
+  }
+
+  /* Ring for avatars that belong to the viewer or to a founding member. */
+  .ring-gold {
+    box-shadow: 0 0 0 1px hsl(var(--background)), 0 0 0 2px hsl(var(--gold-mid) / 0.75);
+  }
+
+  /* Keyboard hint chips (command palette, shortcuts). */
+  .kbd {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 1.35rem;
+    height: 1.35rem;
+    padding: 0 0.35rem;
+    border-radius: 4px;
+    font-size: 11px;
+    font-weight: 400;
+    color: hsl(var(--foreground) / 0.6);
+    background: hsl(0 0% 100% / 0.04);
+    border: 1px solid hsl(var(--hairline-strong));
+    box-shadow: inset 0 -1px 0 hsl(0 0% 0% / 0.4);
   }
 
   /* Page chrome: flat, opaque, zero blur. Headers should read as a stable
@@ -256,6 +405,12 @@
   }
   .press:active {
     transform: scale(0.97);
+  }
+
+  /* One focus treatment: a thin gold ring, only for keyboard focus. */
+  :focus-visible {
+    outline: 1px solid hsl(var(--gold-mid) / 0.8);
+    outline-offset: 2px;
   }
 
   .text-signal {

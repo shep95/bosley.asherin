@@ -1,5 +1,5 @@
 import { Link, useLocation } from "react-router-dom";
-import { Helmet } from "react-helmet-async";
+import { Helmet } from "@/components/Head";
 import { ArrowLeft } from "lucide-react";
 import backgroundWallpaper from "@/assets/background-wallpaper.webp";
 
@@ -23,11 +23,11 @@ const NotFound = () => {
 
       <main className="relative z-10 min-h-screen flex items-end px-5 sm:px-8 lg:px-12 pb-16 sm:pb-24 pt-28">
         <div className="max-w-6xl mx-auto w-full">
-          <p className="text-foreground/40 text-[11px] font-light tracking-[0.28em] uppercase mb-8">404</p>
+          <p className="eyebrow mb-8">404</p>
           <h1 className="text-[clamp(2.5rem,8vw,6.5rem)] font-extralight text-foreground leading-[0.95] tracking-[-0.045em] max-w-4xl">
             this room
             <br />
-            <span className="font-thin text-foreground/70">is not here.</span>
+            <span className="font-display italic tracking-[-0.015em] text-foreground/75">is not here.</span>
           </h1>
           <p className="mt-10 text-foreground/55 font-light max-w-md leading-relaxed break-words">
             nothing lives at <span className="text-foreground/80">{location.pathname}</span>. the link may be old, or it

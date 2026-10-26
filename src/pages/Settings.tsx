@@ -21,6 +21,55 @@ import KeywordFiltersManager from "@/components/privacy/KeywordFiltersManager";
 import FeedProfilesManager from "@/components/feed/FeedProfilesManager";
 import { MFAEnrollModal } from "@/components/auth/MFAModals";
 import PageHeader from "@/components/layout/PageHeader";
+import MemberCard from "@/components/MemberCard";
+import { logAuditEvent } from "@/lib/auditLog";
+import type { Database } from "@/integrations/supabase/types";
+
+type UserSettingsRow = Database["public"]["Tables"]["user_settings"]["Row"];
+type UserSettingsUpdate = Database["public"]["Tables"]["user_settings"]["Update"];
+type ProfileSettings = {
+  username: string;
+  display_name: string | null;
+  member_number: number | null;
+  created_at: string | null;
+  custom_background_url: string | null;
+  message_wallpaper_url: string | null;
+};
+
+// Every bucket that stores files under `${uid}/…`. Storage forbids direct
+// deletes from SQL, so account deletion removes these through the Storage API.
+const USER_BUCKETS = ["avatars", "post-media", "backgrounds", "files"] as const;
+const STORAGE_PAGE = 100;
+
+type DeleteStage =
+  | { step: "idle" }
+  | { step: "files"; bucket: string; removed: number }
+  | { step: "account" }
+  | { step: "done" };
+
+/** Every object path under `prefix` in `bucket`, walking sub-folders. */
+const listAllPaths = async (bucket: string, prefix: string): Promise<string[]> => {
+  const paths: string[] = [];
+  const folders = [prefix];
+  while (folders.length > 0) {
+    const folder = folders.shift()!;
+    for (let offset = 0; ; offset += STORAGE_PAGE) {
+      const { data, error } = await supabase.storage
+        .from(bucket)
+        .list(folder, { limit: STORAGE_PAGE, offset, sortBy: { column: "name", order: "asc" } });
+      if (error) throw error;
+      const entries = data ?? [];
+      for (const entry of entries) {
+        const path = `${folder}/${entry.name}`;
+        // Folders come back as placeholder entries without an id.
+        if (entry.id === null || entry.id === undefined) folders.push(path);
+        else paths.push(path);
+      }
+      if (entries.length < STORAGE_PAGE) break;
+    }
+  }
+  return paths;
+};
 
 /* ------------------------------------------------------------------ */
 /* Document furniture: an index, sections, one setting per row.        */
@@ -107,7 +156,7 @@ const ImageRow = ({
         ref={inputRef}
         type="file"
         accept="image/jpeg,image/png,image/gif,image/webp"
-        onChange={(e) => e.target.files?.[0] && onFile(e.target.files[0])}
+        onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ""; if (f) onFile(f); }}
         className="hidden"
       />
       <div className="shrink-0 flex items-center gap-1 text-[14px]">
@@ -153,6 +202,7 @@ const Settings = () => {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deleteConfirmText, setDeleteConfirmText] = useState("");
   const [isDeleting, setIsDeleting] = useState(false);
+  const [deleteStage, setDeleteStage] = useState<DeleteStage>({ step: "idle" });
 
   const { data: mfaFactors } = useQuery({
     queryKey: ['mfa-factors', user?.id],
@@ -171,30 +221,37 @@ const Settings = () => {
 
     const { error } = await supabase.auth.mfa.unenroll({ factorId: totpFactor.id });
     if (error) {
-      toast({ title: "could not turn off two-factor", description: error.message, variant: "destructive" });
+      toast({ title: "could not turn off two-factor. try again.", variant: "destructive" });
     } else {
+      logAuditEvent('mfa_disabled');
       toast({ title: "two-factor is off" });
       queryClient.invalidateQueries({ queryKey: ['mfa-factors'] });
     }
   };
 
+  const settingsKey = ['user-settings', user?.id] as const;
+  const profileKey = ['profile-settings', user?.id] as const;
+
   const { data: settings, isLoading } = useQuery({
-    queryKey: ['user-settings', user?.id],
-    queryFn: async () => {
+    queryKey: settingsKey,
+    queryFn: async (): Promise<UserSettingsRow | null> => {
       if (!user) return null;
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from('user_settings')
         .select('*')
         .eq('user_id', user.id)
         .maybeSingle();
+      // A failed read is not "no row": never insert defaults over a network error.
+      if (error) throw error;
 
       if (!data) {
         // Create default settings
-        const { data: newSettings } = await supabase
+        const { data: newSettings, error: insertError } = await supabase
           .from('user_settings')
           .insert({ user_id: user.id })
           .select()
           .single();
+        if (insertError) throw insertError;
         return newSettings;
       }
       return data;
@@ -203,33 +260,76 @@ const Settings = () => {
   });
 
   const { data: profile } = useQuery({
-    queryKey: ['profile-settings', user?.id],
-    queryFn: async () => {
+    queryKey: profileKey,
+    queryFn: async (): Promise<ProfileSettings | null> => {
       if (!user) return null;
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from('profiles')
-        .select('username, custom_background_url, message_wallpaper_url')
+        .select('username, display_name, member_number, created_at, custom_background_url, message_wallpaper_url')
         .eq('user_id', user.id)
         .maybeSingle();
+      if (error) throw error;
       return data;
     },
     enabled: !!user
   });
 
+  // Optimistic: the switch moves at once, and moves back if the save fails.
   const updateSettings = useMutation({
-    mutationFn: async (updates: Record<string, any>) => {
-      if (!user) return;
+    mutationFn: async (updates: UserSettingsUpdate) => {
+      if (!user) throw new Error('not signed in');
       const { error } = await supabase
         .from('user_settings')
-        .update(updates as any)
+        .update(updates)
         .eq('user_id', user.id);
       if (error) throw error;
     },
+    onMutate: async (updates) => {
+      await queryClient.cancelQueries({ queryKey: settingsKey });
+      const previous = queryClient.getQueryData<UserSettingsRow | null>(settingsKey);
+      if (previous) {
+        queryClient.setQueryData<UserSettingsRow | null>(settingsKey, { ...previous, ...updates } as UserSettingsRow);
+      }
+      return { previous };
+    },
+    onError: (_error, _updates, context) => {
+      if (context?.previous !== undefined) queryClient.setQueryData(settingsKey, context.previous);
+      toast({ title: "could not save that. try again.", variant: "destructive" });
+    },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['user-settings'] });
       toast({ title: "saved" });
-    }
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ['user-settings'] });
+    },
   });
+
+  /**
+   * Write one image column on the profile, optimistically, rolling back and
+   * reporting on failure. Resolves to whether it saved.
+   */
+  const saveProfileImage = async (
+    column: 'custom_background_url' | 'message_wallpaper_url',
+    value: string | null
+  ): Promise<boolean> => {
+    if (!user) return false;
+    await queryClient.cancelQueries({ queryKey: profileKey });
+    const previous = queryClient.getQueryData<ProfileSettings | null>(profileKey);
+    if (previous) queryClient.setQueryData<ProfileSettings | null>(profileKey, { ...previous, [column]: value });
+
+    const { error } = await supabase
+      .from('profiles')
+      .update(column === 'custom_background_url' ? { custom_background_url: value } : { message_wallpaper_url: value })
+      .eq('user_id', user.id);
+
+    if (error) {
+      if (previous !== undefined) queryClient.setQueryData(profileKey, previous);
+      return false;
+    }
+    queryClient.invalidateQueries({ queryKey: ['profile-settings'] });
+    queryClient.invalidateQueries({ queryKey: [column === 'custom_background_url' ? 'profile-background' : 'profile-wallpaper'] });
+    return true;
+  };
 
   const uploadBackground = async (file: File) => {
     if (!user) return;
@@ -262,26 +362,21 @@ const Settings = () => {
       .from('backgrounds')
       .getPublicUrl(fileName);
 
-    await supabase
-      .from('profiles')
-      .update({ custom_background_url: publicUrl })
-      .eq('user_id', user.id);
-
-    queryClient.invalidateQueries({ queryKey: ['profile-settings'] });
-    queryClient.invalidateQueries({ queryKey: ['profile-background'] });
+    if (!(await saveProfileImage('custom_background_url', publicUrl))) {
+      // Do not leave an orphaned upload behind a failed save.
+      void supabase.storage.from('backgrounds').remove([fileName]);
+      toast({ title: "could not save the background. try again.", variant: "destructive" });
+      return;
+    }
     toast({ title: "background updated" });
   };
 
   const removeBackground = async () => {
     if (!user) return;
-
-    await supabase
-      .from('profiles')
-      .update({ custom_background_url: null })
-      .eq('user_id', user.id);
-
-    queryClient.invalidateQueries({ queryKey: ['profile-settings'] });
-    queryClient.invalidateQueries({ queryKey: ['profile-background'] });
+    if (!(await saveProfileImage('custom_background_url', null))) {
+      toast({ title: "could not remove the background. try again.", variant: "destructive" });
+      return;
+    }
     toast({ title: "background removed" });
   };
 
@@ -316,26 +411,20 @@ const Settings = () => {
       .from('backgrounds')
       .getPublicUrl(fileName);
 
-    await supabase
-      .from('profiles')
-      .update({ message_wallpaper_url: publicUrl })
-      .eq('user_id', user.id);
-
-    queryClient.invalidateQueries({ queryKey: ['profile-settings'] });
-    queryClient.invalidateQueries({ queryKey: ['profile-wallpaper'] });
+    if (!(await saveProfileImage('message_wallpaper_url', publicUrl))) {
+      void supabase.storage.from('backgrounds').remove([fileName]);
+      toast({ title: "could not save the wallpaper. try again.", variant: "destructive" });
+      return;
+    }
     toast({ title: "message wallpaper updated" });
   };
 
   const removeMessageWallpaper = async () => {
     if (!user) return;
-
-    await supabase
-      .from('profiles')
-      .update({ message_wallpaper_url: null })
-      .eq('user_id', user.id);
-
-    queryClient.invalidateQueries({ queryKey: ['profile-settings'] });
-    queryClient.invalidateQueries({ queryKey: ['profile-wallpaper'] });
+    if (!(await saveProfileImage('message_wallpaper_url', null))) {
+      toast({ title: "could not remove the wallpaper. try again.", variant: "destructive" });
+      return;
+    }
     toast({ title: "message wallpaper removed" });
   };
 
@@ -366,6 +455,10 @@ const Settings = () => {
         }
       );
 
+      if (response.status === 429) {
+        toast({ title: "you exported a moment ago. try again in a few minutes.", variant: "destructive" });
+        return;
+      }
       if (!response.ok) throw new Error('Export failed');
 
       const blob = await response.blob();
@@ -378,8 +471,10 @@ const Settings = () => {
       document.body.removeChild(a);
       window.URL.revokeObjectURL(url);
 
+      // The export function records the data_export security event itself
+      // (server-side, also used for its throttle), so nothing is logged here.
       toast({ title: "your export is downloading" });
-    } catch (error) {
+    } catch {
       toast({
         title: "export failed",
         description: "try again in a moment.",
@@ -393,28 +488,85 @@ const Settings = () => {
   const deleteMatches =
     !!profile?.username && deleteConfirmText.trim().toLowerCase() === profile.username.toLowerCase();
 
+  /**
+   * Remove every file the user owns, bucket by bucket. Per-file failures are
+   * counted, not fatal: the account deletion still goes ahead.
+   */
+  const removeUserFiles = async (uid: string): Promise<number> => {
+    let failed = 0;
+    let removed = 0;
+    for (const bucket of USER_BUCKETS) {
+      setDeleteStage({ step: "files", bucket, removed });
+      let paths: string[] = [];
+      try {
+        paths = await listAllPaths(bucket, uid);
+      } catch {
+        // Could not even list this bucket; count it as one failure and move on.
+        failed += 1;
+        continue;
+      }
+      for (let i = 0; i < paths.length; i += STORAGE_PAGE) {
+        const chunk = paths.slice(i, i + STORAGE_PAGE);
+        const { data, error } = await supabase.storage.from(bucket).remove(chunk);
+        if (error) {
+          failed += chunk.length;
+        } else {
+          const gone = data?.length ?? 0;
+          removed += gone;
+          failed += Math.max(0, chunk.length - gone);
+        }
+        setDeleteStage({ step: "files", bucket, removed });
+      }
+    }
+    return failed;
+  };
+
   const handleDeleteAccount = async () => {
     if (!user || !deleteMatches || isDeleting) return;
     setIsDeleting(true);
     try {
+      const failedFiles = await removeUserFiles(user.id);
+
       // Server-side SECURITY DEFINER function: removes every row owned by
       // auth.uid() and the auth user itself. Nothing is passed from the client.
+      setDeleteStage({ step: "account" });
       const { error } = await supabase.rpc('delete_my_account');
       if (error) throw error;
 
-      await signOut();
+      setDeleteStage({ step: "done" });
       queryClient.clear();
-      toast({ title: "your account and data are gone." });
+      await signOut('local');
+      toast({
+        title: "your account and data are gone.",
+        description: failedFiles > 0
+          ? `${failedFiles} ${failedFiles === 1 ? "file" : "files"} could not be removed. contact us and we will clear them.`
+          : undefined,
+      });
       navigate("/", { replace: true });
     } catch {
       toast({
-        title: "could not delete the account",
-        description: "try again in a moment.",
+        title: "could not delete the account. try again in a moment.",
         variant: "destructive",
       });
+      setDeleteStage({ step: "idle" });
       setIsDeleting(false);
     }
   };
+
+  const handleSignOutEverywhere = async () => {
+    const { error } = await signOut('global');
+    if (error) toast({ title: error, variant: "destructive" });
+    navigate("/", { replace: true });
+  };
+
+  const deleteProgress =
+    deleteStage.step === "files"
+      ? `removing files from ${deleteStage.bucket}… ${deleteStage.removed} so far`
+      : deleteStage.step === "account"
+        ? "removing your account…"
+        : deleteStage.step === "done"
+          ? "signing out…"
+          : "deleting…";
 
   const jumpTo = (id: string) => (e: React.MouseEvent<HTMLAnchorElement>) => {
     const el = document.getElementById(id);
@@ -466,6 +618,17 @@ const Settings = () => {
         <div className="pb-16">
           {/* account */}
           <Section id="account" label="account">
+            {profile?.username && (
+              <div className="row px-5 sm:px-8 py-4">
+                <MemberCard
+                  size="compact"
+                  username={profile.username}
+                  displayName={profile.display_name}
+                  memberNumber={profile.member_number}
+                  joinedAt={profile.created_at}
+                />
+              </div>
+            )}
             <SettingRow
               name={profile?.username ? `@${profile.username}` : "your profile"}
               hint="name, bio, avatar and links live on your profile."
@@ -485,7 +648,7 @@ const Settings = () => {
               control={
                 <button
                   type="button"
-                  onClick={async () => { await signOut(); navigate("/"); }}
+                  onClick={async () => { await signOut('local'); navigate("/", { replace: true }); }}
                   className="quiet h-10 px-2 rounded-md text-[14px]"
                 >
                   sign out
@@ -697,7 +860,16 @@ const Settings = () => {
             />
             <SettingRow
               name="sessions"
-              hint="you are signed out after 15 minutes idle. sign out under account to end this device now."
+              hint="you are signed out after 15 minutes idle. sign out everywhere ends every session, on every device."
+              control={
+                <button
+                  type="button"
+                  onClick={handleSignOutEverywhere}
+                  className="quiet h-10 px-2 rounded-md text-[14px]"
+                >
+                  sign out everywhere
+                </button>
+              }
             />
             <SettingRow name="activity" hint="sign-ins, password changes and other security events on this account." />
             <AuditLogViewer />
@@ -775,7 +947,7 @@ const Settings = () => {
                       {isDeleting ? (
                         <>
                           <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                          deleting…
+                          {deleteProgress}
                         </>
                       ) : (
                         "delete everything"

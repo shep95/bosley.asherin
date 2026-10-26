@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { Play, Pause, Volume2, VolumeX, Maximize, Download, Loader2, Gauge } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
@@ -32,16 +32,24 @@ const VideoPlayer = ({ src, className = "" }: VideoPlayerProps) => {
   const [isLoading, setIsLoading] = useState(true);
   const [playbackSpeed, setPlaybackSpeed] = useState(1);
   const [isDragging, setIsDragging] = useState(false);
+  const [hasError, setHasError] = useState(false);
   const { toast } = useToast();
 
+  // A new source gets a fresh chance.
+  useEffect(() => {
+    setHasError(false);
+    setIsLoading(true);
+  }, [src]);
+
   const formatTime = (seconds: number) => {
+    if (!Number.isFinite(seconds) || seconds < 0) return "0:00";
     const mins = Math.floor(seconds / 60);
     const secs = Math.floor(seconds % 60);
     return `${mins}:${secs.toString().padStart(2, '0')}`;
   };
 
   // Auto-hide controls when playing
-  const resetHideTimeout = () => {
+  const resetHideTimeout = useCallback(() => {
     if (hideControlsTimeout.current) {
       clearTimeout(hideControlsTimeout.current);
     }
@@ -51,7 +59,7 @@ const VideoPlayer = ({ src, className = "" }: VideoPlayerProps) => {
         setShowControls(false);
       }, 2500);
     }
-  };
+  }, [isPlaying]);
 
   useEffect(() => {
     return () => {
@@ -70,7 +78,7 @@ const VideoPlayer = ({ src, className = "" }: VideoPlayerProps) => {
     } else {
       resetHideTimeout();
     }
-  }, [isPlaying]);
+  }, [isPlaying, resetHideTimeout]);
 
   const togglePlay = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -98,39 +106,50 @@ const VideoPlayer = ({ src, className = "" }: VideoPlayerProps) => {
   };
 
   const handleTimeUpdate = () => {
-    if (videoRef.current && !isDragging) {
-      setCurrentTime(videoRef.current.currentTime);
-      setProgress((videoRef.current.currentTime / videoRef.current.duration) * 100);
+    const v = videoRef.current;
+    if (v && !isDragging) {
+      setCurrentTime(v.currentTime);
+      // Streams and some WebM files report NaN/Infinity until fully buffered.
+      setProgress(Number.isFinite(v.duration) && v.duration > 0 ? (v.currentTime / v.duration) * 100 : 0);
     }
   };
 
   const handleLoadedMetadata = () => {
     if (videoRef.current) {
-      setDuration(videoRef.current.duration);
+      const d = videoRef.current.duration;
+      setDuration(Number.isFinite(d) ? d : 0);
       setIsLoading(false);
     }
   };
 
+  const handleError = () => {
+    setHasError(true);
+    setIsLoading(false);
+    setIsPlaying(false);
+  };
+
+  /** Seek to a fraction of the video, only when the duration is known. */
+  const seekToPercent = (percent: number) => {
+    const v = videoRef.current;
+    if (!v || !Number.isFinite(duration) || duration <= 0) return;
+    const newTime = (percent / 100) * duration;
+    v.currentTime = newTime;
+    setProgress(percent);
+    setCurrentTime(newTime);
+  };
+
   const handleProgressClick = (e: React.MouseEvent<HTMLDivElement>) => {
     e.stopPropagation();
-    if (progressRef.current && videoRef.current) {
+    if (progressRef.current) {
       const rect = progressRef.current.getBoundingClientRect();
-      const percent = Math.max(0, Math.min(100, ((e.clientX - rect.left) / rect.width) * 100));
-      const newTime = (percent / 100) * duration;
-      videoRef.current.currentTime = newTime;
-      setProgress(percent);
-      setCurrentTime(newTime);
+      seekToPercent(Math.max(0, Math.min(100, ((e.clientX - rect.left) / rect.width) * 100)));
     }
   };
 
   const handleProgressDrag = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (isDragging && progressRef.current && videoRef.current) {
+    if (isDragging && progressRef.current) {
       const rect = progressRef.current.getBoundingClientRect();
-      const percent = Math.max(0, Math.min(100, ((e.clientX - rect.left) / rect.width) * 100));
-      const newTime = (percent / 100) * duration;
-      videoRef.current.currentTime = newTime;
-      setProgress(percent);
-      setCurrentTime(newTime);
+      seekToPercent(Math.max(0, Math.min(100, ((e.clientX - rect.left) / rect.width) * 100)));
     }
   };
 
@@ -155,21 +174,29 @@ const VideoPlayer = ({ src, className = "" }: VideoPlayerProps) => {
   const handleDownload = async (e: React.MouseEvent) => {
     e.stopPropagation();
     setIsDownloading(true);
+    let objectUrl: string | null = null;
     try {
       const response = await fetch(src);
+      if (!response.ok) throw new Error(`download failed (${response.status})`);
       const blob = await response.blob();
-      const url = window.URL.createObjectURL(blob);
+      const mime = (blob.type || response.headers.get("content-type") || "").split(";")[0].trim();
+      const ext = mime === "video/webm" ? "webm" : mime === "video/quicktime" ? "mov" : "mp4";
+      objectUrl = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
-      a.href = url;
-      a.download = `video-${Date.now()}.mp4`;
+      a.href = objectUrl;
+      a.download = `video-${Date.now()}.${ext}`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
-      window.URL.revokeObjectURL(url);
-      toast({ title: "Download started" });
-    } catch (error) {
-      toast({ title: "Download failed", variant: "destructive" });
+      toast({ title: "download started" });
+    } catch {
+      toast({ title: "download failed", variant: "destructive" });
     } finally {
+      // Give the browser a moment to start the download before freeing the blob.
+      if (objectUrl) {
+        const url = objectUrl;
+        setTimeout(() => window.URL.revokeObjectURL(url), 10_000);
+      }
       setIsDownloading(false);
     }
   };
@@ -177,6 +204,19 @@ const VideoPlayer = ({ src, className = "" }: VideoPlayerProps) => {
   const handleMouseMove = () => {
     resetHideTimeout();
   };
+
+  if (hasError) {
+    return (
+      <div
+        className={`relative glass-inset rounded-[0.625rem] aspect-video flex items-center justify-center ${className}`}
+        role="img"
+        aria-label="video unavailable"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <span className="text-xs font-light text-foreground/40">video unavailable</span>
+      </div>
+    );
+  }
 
   return (
     <div 
@@ -198,6 +238,8 @@ const VideoPlayer = ({ src, className = "" }: VideoPlayerProps) => {
         loop
         muted={isMuted}
         playsInline
+        preload="metadata"
+        onError={handleError}
         onTimeUpdate={handleTimeUpdate}
         onLoadedMetadata={handleLoadedMetadata}
         onPlay={() => setIsPlaying(true)}

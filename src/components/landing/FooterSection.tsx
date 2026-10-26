@@ -13,7 +13,7 @@ const FooterSection = () => {
           <div className="max-w-xs">
             <div className="flex items-center gap-2 mb-4">
               <Brandmark className="w-5 h-5 opacity-80" />
-              <span className="text-foreground font-light tracking-wide">Bosley</span>
+              <span className="font-display text-foreground text-[20px] leading-none">Bosley</span>
             </div>
             <p className="text-foreground/70 font-light text-sm leading-relaxed">
               a quiet room on the internet. chronological feed. no ads.
@@ -41,8 +41,8 @@ const FooterSection = () => {
           </nav>
         </div>
 
-        <p className="text-foreground/80 text-3xl sm:text-5xl md:text-6xl font-extralight tracking-[-0.03em] leading-[1.05] max-w-4xl">
-          speak freely. <span className="text-foreground/60">quietly.</span>
+        <p className="text-foreground/85 text-3xl sm:text-5xl md:text-6xl font-extralight tracking-[-0.035em] leading-[1.02] max-w-4xl">
+          speak freely. <span className="font-display italic tracking-[-0.015em] text-foreground/60">quietly.</span>
         </p>
 
         <div className="mt-16 pt-6 border-t border-border/15 flex flex-col sm:flex-row items-center justify-between gap-3 text-foreground/60 text-xs font-light">

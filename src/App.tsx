@@ -1,12 +1,13 @@
 import { lazy, Suspense } from "react";
-import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
-import { TooltipProvider } from "@/components/ui/tooltip";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
-import { Helmet } from "react-helmet-async";
+import { QueryClientProvider } from "@tanstack/react-query";
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from "react-router-dom";
+import { queryClient } from "@/lib/queryClient";
+import { ErrorBoundary } from "@/components/ErrorBoundary";
+import { Helmet } from "@/components/Head";
 import { AuthProvider, useAuth } from "@/hooks/useAuth";
 import { useIdleTimeout } from "@/hooks/useIdleTimeout";
+import { UnreadProvider } from "@/hooks/UnreadProvider";
 // The landing page is the first paint for every cold visit, so it stays in the
 // entry chunk. Everything else is split per-route: a signed-out visitor should
 // never download the composer, charts, calendar or messaging code to read the
@@ -42,20 +43,6 @@ const Rules = lazy(() => import("./pages/Rules"));
 const Templates = lazy(() => import("./pages/Templates"));
 const ThreadComposer = lazy(() => import("./pages/ThreadComposer"));
 const Calendar = lazy(() => import("./pages/Calendar"));
-
-const queryClient = new QueryClient({
-  defaultOptions: {
-    queries: {
-      // Remounting a route (tab-switch, back-navigation) previously refired
-      // every query, so returning to the feed re-fetched posts, profiles and
-      // signed URLs that were seconds old.
-      staleTime: 60_000,
-      gcTime: 5 * 60_000,
-      refetchOnWindowFocus: false,
-      retry: 1,
-    },
-  },
-});
 
 /**
  * Route-level loading is a quiet shell of the page that is coming, not a
@@ -138,8 +125,12 @@ const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
 
 const AppRoutes = () => {
   useIdleTimeout();
+  const location = useLocation();
 
+  // Keyed on the path so a crash on one page clears once the user navigates
+  // away; a failed lazy chunk is retried by a one-time reload inside.
   return (
+    <ErrorBoundary resetKey={location.pathname}>
     <Suspense fallback={<RouteFallback />}>
       <Routes>
       <Route path="/" element={<Index />} />
@@ -323,20 +314,22 @@ const AppRoutes = () => {
       <Route path="*" element={<NotFound />} />
       </Routes>
     </Suspense>
+    </ErrorBoundary>
   );
 };
 
 const App = () => (
   <QueryClientProvider client={queryClient}>
-    <TooltipProvider>
-      <Toaster />
+    <>
       <Sonner />
       <BrowserRouter>
         <AuthProvider>
-          <AppRoutes />
+          <UnreadProvider>
+            <AppRoutes />
+          </UnreadProvider>
         </AuthProvider>
       </BrowserRouter>
-    </TooltipProvider>
+    </>
   </QueryClientProvider>
 );
 

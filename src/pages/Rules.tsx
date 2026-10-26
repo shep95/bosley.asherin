@@ -19,7 +19,7 @@ const TRIGGER_TYPES = [
 const ACTION_TYPES = [
   { value: "create_post", label: "post a follow-up" },
   { value: "archive_post", label: "make the post private" },
-  { value: "unpin_replace", label: "replace the pinned post" },
+  { value: "unpin_replace", label: "pin it in place of my pinned post" },
   { value: "send_dm", label: "message me" },
 ];
 
@@ -46,13 +46,14 @@ const Rules = () => {
   const [actionType, setActionType] = useState("create_post");
   const [actionContent, setActionContent] = useState("");
 
-  const { data: rules, isLoading } = useQuery({
+  const { data: rules, isLoading, isError, refetch } = useQuery({
     queryKey: ["post-rules", user?.id],
     queryFn: async () => {
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from("post_rules" as any).select("*")
         .eq("user_id", user!.id)
         .order("created_at", { ascending: false });
+      if (error) throw error;
       return (data as any[]) ?? [];
     },
     enabled: !!user,
@@ -141,6 +142,7 @@ const Rules = () => {
       if (error) throw error;
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: ["post-rules"] }),
+    onError: () => toast.error("could not change that rule. try again."),
   });
 
   const deleteRule = useMutation({
@@ -152,6 +154,7 @@ const Rules = () => {
       qc.invalidateQueries({ queryKey: ["post-rules"] });
       toast.success("rule deleted");
     },
+    onError: () => toast.error("could not delete that rule. try again."),
   });
 
   // Inline validation: the same rules the mutation enforces, surfaced as you type.
@@ -290,6 +293,13 @@ const Rules = () => {
             </div>
           ))}
         </div>
+      ) : isError ? (
+        <EmptyState
+          title="your rules did not load."
+          description="nothing was lost. check your connection and try again."
+          actionLabel="try again"
+          onAction={() => { void refetch(); }}
+        />
       ) : (
         <EmptyState
           title="no rules yet."
@@ -332,7 +342,7 @@ function prettyAction(r: Rule) {
   switch (r.action_type) {
     case "create_post": return `post a follow-up${c.content ? `: "${String(c.content).slice(0, 40)}…"` : ""}`;
     case "archive_post": return "make it private";
-    case "unpin_replace": return "replace the pinned post";
+    case "unpin_replace": return "pin it in place of your pinned post";
     case "send_dm": return "message you";
     default: return r.action_type;
   }

@@ -29,11 +29,14 @@ const GlassHeader = ({ onOpenAuth }: GlassHeaderProps) => {
   return (
     <header
       className={`fixed top-0 left-0 right-0 z-50 transition-colors duration-300 ease-soft ${
-        scrolled ? "bg-background/70 backdrop-blur-md border-b border-foreground/10" : "border-b border-transparent"
+        scrolled ? "bg-background/95 border-b border-foreground/10" : "border-b border-transparent"
       }`}
     >
-      <div className="max-w-6xl mx-auto px-5 sm:px-8 h-14 flex items-center justify-between">
-        <Link to="/" className="text-foreground font-light text-[17px] tracking-[-0.01em]">
+      {/* Padding outside the max width, like every landing section, so the
+          wordmark lines up with the headline below it. */}
+      <div className="px-5 sm:px-8">
+      <div className="max-w-6xl mx-auto h-14 flex items-center justify-between">
+        <Link to="/" className="font-display text-foreground text-[22px] leading-none tracking-[-0.01em]">
           Bosley
         </Link>
         <nav className="flex items-center gap-1 sm:gap-2">
@@ -47,6 +50,7 @@ const GlassHeader = ({ onOpenAuth }: GlassHeaderProps) => {
             get started
           </Button>
         </nav>
+      </div>
       </div>
     </header>
   );

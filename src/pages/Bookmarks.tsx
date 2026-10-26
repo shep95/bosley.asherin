@@ -1,109 +1,102 @@
 import DashboardLayout from "@/components/layout/DashboardLayout";
 import PostCard from "@/components/feed/PostCard";
 import FeedSkeleton from "@/components/feed/FeedSkeleton";
+import LoadMoreSentinel from "@/components/feed/LoadMoreSentinel";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
-import { useQuery } from "@tanstack/react-query";
+import { useInfiniteQuery } from "@tanstack/react-query";
 import EmptyState from "@/components/ui/empty-state";
 import PageHeader from "@/components/layout/PageHeader";
+import { enrichPosts, type FeedPost } from "@/lib/postFeed";
+
+const PAGE_SIZE = 30;
+
+/** Keyset cursor on the bookmark rows: (created_at, id), newest first. */
+type Cursor = { created_at: string; id: string };
+type BookmarkPage = { posts: FeedPost[]; rawCount: number; cursor: Cursor | null };
 
 const Bookmarks = () => {
   const { user } = useAuth();
 
-  const { data: bookmarkedPosts, isLoading } = useQuery({
+  const {
+    data,
+    isPending,
+    isError,
+    refetch,
+    hasNextPage,
+    fetchNextPage,
+    isFetchingNextPage,
+    isFetchNextPageError,
+  } = useInfiniteQuery({
     queryKey: ['bookmarks', user?.id],
-    queryFn: async () => {
-      if (!user) return [];
+    enabled: !!user,
+    initialPageParam: null as Cursor | null,
+    getNextPageParam: (last: BookmarkPage) => (last.rawCount < PAGE_SIZE ? undefined : last.cursor ?? undefined),
+    queryFn: async ({ pageParam }): Promise<BookmarkPage> => {
+      if (!user) return { posts: [], rawCount: 0, cursor: null };
 
-      // Get bookmarks
-      const { data: bookmarks } = await supabase
+      let query = supabase
         .from('bookmarks')
-        .select('post_id')
+        .select('id, post_id, created_at')
         .eq('user_id', user.id)
-        .order('created_at', { ascending: false });
+        .order('created_at', { ascending: false })
+        .order('id', { ascending: false })
+        .limit(PAGE_SIZE);
+      if (pageParam) {
+        query = query.or(
+          `created_at.lt."${pageParam.created_at}",and(created_at.eq."${pageParam.created_at}",id.lt.${pageParam.id})`,
+        );
+      }
 
-      if (!bookmarks || bookmarks.length === 0) return [];
+      const { data: bookmarks, error } = await query;
+      if (error) throw error;
+      const rows = bookmarks ?? [];
+      const last = rows[rows.length - 1];
+      const cursor = last ? { created_at: last.created_at, id: last.id } : null;
+      if (rows.length === 0) return { posts: [], rawCount: 0, cursor };
 
-      const postIds = bookmarks.map(b => b.post_id);
-
-      // Get posts
-      const { data: postsData } = await supabase
+      const postIds = rows.map(b => b.post_id);
+      const { data: postsData, error: postsError } = await supabase
         .from('posts')
         .select('*')
         .in('id', postIds);
+      if (postsError) throw postsError;
 
-      if (!postsData) return [];
+      const enriched = await enrichPosts(postsData ?? [], user.id);
+      // Keep bookmark order; posts that were deleted or hidden simply drop out.
+      const byId = new Map(enriched.map(p => [p.id, p]));
+      const posts = postIds
+        .map(id => byId.get(id))
+        .filter((p): p is FeedPost => !!p);
 
-      // Fetch profiles
-      const userIds = [...new Set(postsData.map(p => p.user_id))];
-      const { data: profilesData } = await supabase
-        .from('profiles')
-        .select('user_id, username, display_name, avatar_url')
-        .in('user_id', userIds);
-
-      const profilesMap = new Map(profilesData?.map(p => [p.user_id, p]) || []);
-
-      // Fetch likes counts
-      const { data: likesData } = await supabase
-        .from('post_likes')
-        .select('post_id')
-        .in('post_id', postIds);
-
-      const likesCountMap = new Map<string, number>();
-      likesData?.forEach(l => {
-        likesCountMap.set(l.post_id, (likesCountMap.get(l.post_id) || 0) + 1);
-      });
-
-      // Check if user liked
-      const { data: userLikes } = await supabase
-        .from('post_likes')
-        .select('post_id')
-        .eq('user_id', user.id)
-        .in('post_id', postIds);
-
-      const userLikedSet = new Set(userLikes?.map(l => l.post_id) || []);
-
-      // Fetch comments counts
-      const { data: commentsData } = await supabase
-        .from('comments')
-        .select('post_id')
-        .in('post_id', postIds);
-
-      const commentsCountMap = new Map<string, number>();
-      commentsData?.forEach(c => {
-        commentsCountMap.set(c.post_id, (commentsCountMap.get(c.post_id) || 0) + 1);
-      });
-
-      // Sort by bookmark order
-      const postMap = new Map(postsData.map(p => [p.id, p]));
-      return postIds.map(id => {
-        const post = postMap.get(id);
-        if (!post) return null;
-        return {
-          ...post,
-          profiles: profilesMap.get(post.user_id) || null,
-          likesCount: likesCountMap.get(post.id) || 0,
-          commentsCount: commentsCountMap.get(post.id) || 0,
-          isLiked: userLikedSet.has(post.id),
-          isBookmarked: true,
-        };
-      }).filter((p): p is NonNullable<typeof p> => p !== null);
+      return { posts, rawCount: rows.length, cursor };
     },
-    enabled: !!user
   });
 
-  const count = bookmarkedPosts?.length ?? 0;
+  const bookmarkedPosts = data?.pages.flatMap(p => p.posts) ?? [];
+  const count = bookmarkedPosts.length;
 
   return (
     <DashboardLayout>
       <PageHeader
         title="bookmarks"
-        subtitle={count > 0 ? `kept for later. only you see this. ${count} ${count === 1 ? "post" : "posts"}.` : "kept for later. only you see this."}
+        subtitle={
+          count > 0 && !hasNextPage
+            ? `kept for later. only you see this. ${count} ${count === 1 ? "post" : "posts"}.`
+            : "kept for later. only you see this."
+        }
       />
 
-      {isLoading ? (
+      {isPending ? (
         <FeedSkeleton count={3} />
-      ) : bookmarkedPosts && bookmarkedPosts.length > 0 ? (
+      ) : isError && count === 0 ? (
+        <EmptyState
+          title="your bookmarks did not load."
+          description="nothing was lost. check your connection and try again."
+          actionLabel="try again"
+          onAction={() => refetch()}
+        />
+      ) : count > 0 || hasNextPage ? (
         <div className="stagger">
           {bookmarkedPosts.map((post, idx) => (
             <div key={post.id} style={{ "--i": Math.min(idx, 8) } as React.CSSProperties}>
@@ -111,11 +104,21 @@ const Bookmarks = () => {
                 post={post}
                 likesCount={post.likesCount}
                 commentsCount={post.commentsCount}
+                repostCount={post.repostCount}
                 isLiked={post.isLiked}
+                isReposted={post.isReposted}
                 isBookmarked={post.isBookmarked}
+                hasPoll={post.hasPoll}
+                quotedPost={post.quotedPost}
               />
             </div>
           ))}
+          <LoadMoreSentinel
+            hasMore={!!hasNextPage}
+            isLoading={isFetchingNextPage}
+            isError={isFetchNextPageError}
+            onLoadMore={() => { if (!isFetchingNextPage) fetchNextPage(); }}
+          />
         </div>
       ) : (
         <EmptyState

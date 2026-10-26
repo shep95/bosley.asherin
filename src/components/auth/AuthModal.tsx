@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useAuthProvider } from "@/lib/authProviders";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
@@ -44,7 +45,8 @@ const AuthModal = ({ open, onOpenChange, defaultTab = "login" }: AuthModalProps)
   const [captchaToken, setCaptchaToken] = useState<string | null | undefined>(TURNSTILE_ENABLED ? null : undefined);
   const [captchaResetKey, setCaptchaResetKey] = useState(0);
 
-  const { signUp, signIn, clearMfaRequired, resetPassword, resendConfirmation } = useAuth();
+  const { signUp, signIn, signOut, clearMfaRequired, resetPassword, resendConfirmation } = useAuth();
+  const [resending, setResending] = useState(false);
   const navigate = useNavigate();
   const { toast } = useToast();
 
@@ -134,6 +136,8 @@ const AuthModal = ({ open, onOpenChange, defaultTab = "login" }: AuthModalProps)
       resetCaptcha();
       toast({ title: "could not create the account", description: error, variant: "destructive" });
     } else if (needsConfirmation) {
+      // The sign-up consumed the token; the resend form needs a fresh one.
+      resetCaptcha();
       setView("confirm");
     } else {
       toast({ title: "welcome to Bosley" });
@@ -180,16 +184,42 @@ const AuthModal = ({ open, onOpenChange, defaultTab = "login" }: AuthModalProps)
     navigate("/dashboard");
   };
 
+  // Without their authenticator the person must be able to back out: end the
+  // aal1 session on this device and close everything.
+  const handleMFASignOut = async () => {
+    setShowMFA(false);
+    await signOut("local");
+    resetCaptcha();
+    onOpenChange(false);
+  };
+
+  const handleResend = async () => {
+    if (captchaBlocked || resending) return;
+    setResending(true);
+    await resendConfirmation(email, captchaToken ?? undefined);
+    setResending(false);
+    resetCaptcha();
+    toast({ title: "sent", description: "if that address has an account, a new link is on its way." });
+  };
+
+  const backToAuth = () => {
+    resetCaptcha();
+    setView("auth");
+  };
+
   const handleResetPassword = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!resetEmail.trim()) {
       setErrors({ resetEmail: "enter your email" });
       return;
     }
+    if (captchaBlocked) return;
 
     setLoading(true);
-    const { error } = await resetPassword(resetEmail);
+    const { error } = await resetPassword(resetEmail, captchaToken ?? undefined);
     setLoading(false);
+    // Single-use either way.
+    resetCaptcha();
 
     if (error) {
       toast({ title: "could not send the link", description: error, variant: "destructive" });
@@ -206,8 +236,12 @@ const AuthModal = ({ open, onOpenChange, defaultTab = "login" }: AuthModalProps)
     // Carry over whatever they already typed so they don't have to retype it.
     setResetEmail(email);
     setErrors({});
+    resetCaptcha();
     setView("reset");
   };
+
+  // Hidden until Supabase reports Google as enabled, so it never fails on click.
+  const googleEnabled = useAuthProvider("google");
 
   const handleGoogle = async () => {
     setLoading(true);
@@ -265,16 +299,15 @@ const AuthModal = ({ open, onOpenChange, defaultTab = "login" }: AuthModalProps)
                 type="button"
                 variant="outline"
                 className="w-full"
-                onClick={async () => {
-                  await resendConfirmation(email);
-                  toast({ title: "sent", description: "if that address has an account, a new link is on its way." });
-                }}
+                disabled={captchaBlocked || resending}
+                onClick={handleResend}
               >
-                send the link again
+                {resending ? <Loader2 className="w-4 h-4 animate-spin" /> : "send the link again"}
               </Button>
+              <Turnstile onToken={setCaptchaToken} resetKey={captchaResetKey} action="resend" />
               <button
                 type="button"
-                onClick={() => setView("auth")}
+                onClick={backToAuth}
                 className="quiet block w-full text-center text-[13px] py-2"
               >
                 back to sign in
@@ -304,12 +337,13 @@ const AuthModal = ({ open, onOpenChange, defaultTab = "login" }: AuthModalProps)
                 />
                 <FieldError id="reset-email-error">{errors.resetEmail}</FieldError>
               </div>
-              <Button type="submit" variant="signal" disabled={loading || !resetEmail.trim()} className="w-full">
+              <Turnstile onToken={setCaptchaToken} resetKey={captchaResetKey} action="reset" />
+              <Button type="submit" variant="signal" disabled={loading || !resetEmail.trim() || captchaBlocked} className="w-full">
                 {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : "send reset link"}
               </Button>
               <button
                 type="button"
-                onClick={() => setView("auth")}
+                onClick={backToAuth}
                 className="quiet block w-full text-center text-[13px] py-2"
               >
                 back to sign in
@@ -324,6 +358,7 @@ const AuthModal = ({ open, onOpenChange, defaultTab = "login" }: AuthModalProps)
                 <TabsTrigger value="signup" className="text-[15px]">sign up</TabsTrigger>
               </TabsList>
 
+              {googleEnabled && (<>
               <Button
                 type="button"
                 onClick={handleGoogle}
@@ -341,6 +376,7 @@ const AuthModal = ({ open, onOpenChange, defaultTab = "login" }: AuthModalProps)
                 <span className="text-[11px] text-foreground/35 font-light">or</span>
                 <div className="h-px flex-1 bg-foreground/10" />
               </div>
+              </>)}
 
               <TabsContent value="login" className="mt-0">
                 <form onSubmit={handleSignIn} className="space-y-5" noValidate>
@@ -488,6 +524,7 @@ const AuthModal = ({ open, onOpenChange, defaultTab = "login" }: AuthModalProps)
         open={showMFA}
         onOpenChange={setShowMFA}
         onVerified={handleMFAVerified}
+        onSignOut={() => { void handleMFASignOut(); }}
       />
     </>
   );

@@ -1,5 +1,5 @@
 import PublicShell from "@/components/landing/PublicShell";
-import { Helmet } from "react-helmet-async";
+import { Helmet } from "@/components/Head";
 import { Mail } from "lucide-react";
 import { Link, useParams } from "react-router-dom";
 import NotFound from "@/pages/NotFound";
@@ -13,8 +13,8 @@ const Contact = () => {
           name="description"
           content="email asher@bosley.app for support, feedback, or a human. typically 24-48 business hours."
         />
-        <link rel="canonical" href="https://bosley.app/contact" />
-        <meta property="og:url" content="https://bosley.app/contact" />
+        <link rel="canonical" href="https://bosley.asherin.com/contact" />
+        <meta property="og:url" content="https://bosley.asherin.com/contact" />
         <meta property="og:title" content="contact bosley" />
         <meta property="og:description" content="email asher@bosley.app for support, feedback, or a human." />
       </Helmet>
@@ -111,10 +111,12 @@ const FOR_INDEX: Hub = {
 
 export const For = () => {
   const { slug } = useParams();
-  if (slug && !HUBS[slug]) return <NotFound />;
+  // Own keys only: "constructor", "__proto__" etc. must 404, not render.
+  // (Object.hasOwn needs lib ES2022; tsconfig targets ES2020.)
+  if (slug && !Object.prototype.hasOwnProperty.call(HUBS, slug)) return <NotFound />;
   const hub = slug ? HUBS[slug] : FOR_INDEX;
   const path = slug ? `/for/${slug}` : "/for";
-  const url = `https://bosley.app${path}`;
+  const url = `https://bosley.asherin.com${path}`;
   return (
     <PublicShell>
       <Helmet>
@@ -128,7 +130,7 @@ export const For = () => {
             "@context": "https://schema.org",
             "@type": "BreadcrumbList",
             itemListElement: [
-              { "@type": "ListItem", position: 1, name: "bosley", item: "https://bosley.app/" },
+              { "@type": "ListItem", position: 1, name: "bosley", item: "https://bosley.asherin.com/" },
               { "@type": "ListItem", position: 2, name: hub.h1, item: url },
             ],
           })}

@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { memo, useState } from "react";
 import { Trash2, Reply, Smile, MoreHorizontal } from "lucide-react";
 import {
   DropdownMenu,
@@ -20,6 +20,11 @@ interface MessageBubbleProps {
   currentUserId: string;
   createdAt: string;
   readAt?: string | null;
+  /** View-once message: content is shown once, then only "opened". */
+  isViewOnce?: boolean | null;
+  viewedAt?: string | null;
+  /** Called when the receiver opens a view-once message. */
+  onOpenViewOnce?: (messageId: string) => void;
   replyTo?: {
     id: string;
     content: string;
@@ -41,6 +46,15 @@ interface MessageBubbleProps {
 }
 
 const EMOJI_OPTIONS = ['👍', '❤️', '😂', '😮', '😢', '🔥', '👏', '🎉'];
+const NO_REACTIONS: NonNullable<MessageBubbleProps['reactions']> = [];
+
+// Hover-capable pointers reveal actions on hover. Touch devices have no hover
+// (and emulate mouseenter right before click), so there we toggle on tap instead.
+const CAN_HOVER =
+  typeof window === 'undefined' || !window.matchMedia || window.matchMedia('(hover: hover)').matches;
+
+const formatTime = (dateString: string) =>
+  new Date(dateString).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }).toLowerCase();
 
 /**
  * One message. Two tones of the same surface tell you who spoke; nothing is
@@ -53,6 +67,9 @@ const MessageBubble = ({
   currentUserId,
   createdAt,
   readAt,
+  isViewOnce = false,
+  viewedAt = null,
+  onOpenViewOnce,
   replyTo,
   sender,
   showSenderInfo = false,
@@ -60,26 +77,25 @@ const MessageBubble = ({
   onDelete,
   onReply,
   onReact,
-  reactions = []
+  reactions = NO_REACTIONS
 }: MessageBubbleProps) => {
   const [showActions, setShowActions] = useState(false);
   const [reactOpen, setReactOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
+  // Revealed in this session: the receiver tapped to open a view-once message.
+  const [revealed, setRevealed] = useState(false);
   const isMine = senderId === currentUserId;
-  // Hover-capable pointers reveal actions on hover. Touch devices have no hover
-  // (and emulate mouseenter right before click), so there we toggle on tap instead.
-  const canHover = useMemo(
-    () => typeof window === 'undefined' || !window.matchMedia || window.matchMedia('(hover: hover)').matches,
-    []
-  );
-
-  const formatTime = (dateString: string) => {
-    const date = new Date(dateString);
-    return date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }).toLowerCase();
-  };
+  const canHover = CAN_HOVER;
+  // For the receiver a view-once message is either sealed (tap to open), open
+  // right now, or spent ("opened"). The sender always sees what they wrote.
+  const viewOnceState: 'none' | 'sealed' | 'open' | 'spent' =
+    !isViewOnce || isMine ? 'none' : revealed ? 'open' : viewedAt ? 'spent' : 'sealed';
+  const hideContent = viewOnceState === 'sealed' || viewOnceState === 'spent';
 
   const shownReactions = reactions.filter((r) => !!r.emoji);
-  const hasActions = !!(onReact || onReply || (onDelete && isMine));
+  // No replying to a view-once message: the quote would keep it around.
+  const replyAllowed = !!onReply && !isViewOnce;
+  const hasActions = !hideContent && !!(onReact || replyAllowed || (onDelete && isMine));
   const canDelete = isMine && !!onDelete;
   // Keep the strip mounted while a popover or menu opened from it is showing,
   // otherwise moving the pointer into the emoji picker unmounts its trigger.
@@ -96,7 +112,7 @@ const MessageBubble = ({
           showSenderInfo ? (
             <UserAvatar avatarUrl={sender.avatar_url} username={sender.username} size="sm" className="shrink-0 mb-5" />
           ) : (
-            <span aria-hidden className="w-8 shrink-0" />
+            <span aria-hidden className="w-7 shrink-0" />
           )
         )}
 
@@ -119,10 +135,26 @@ const MessageBubble = ({
             className={`rounded-md px-3.5 py-2 ${isMine ? 'bg-foreground/[0.08]' : 'bg-foreground/[0.04]'}`}
             onClick={canHover || !hasActions ? undefined : () => setShowActions((prev) => !prev)}
           >
-            {/* Message content with anti-screenshot protection */}
-            <p className="text-[15px] font-light leading-[1.5] text-foreground/90 select-none whitespace-pre-wrap [overflow-wrap:anywhere]" style={{ userSelect: 'none' }}>
-              {content}
-            </p>
+            {viewOnceState === 'sealed' ? (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setRevealed(true);
+                  onOpenViewOnce?.(id);
+                }}
+                className="quiet text-[14px] font-light"
+              >
+                view once. tap to open.
+              </button>
+            ) : viewOnceState === 'spent' ? (
+              <p className="text-[14px] font-light text-foreground/40 select-none">opened</p>
+            ) : (
+              /* Message content with anti-screenshot protection */
+              <p className="text-[15px] font-light leading-[1.5] text-foreground/90 select-none whitespace-pre-wrap [overflow-wrap:anywhere]" style={{ userSelect: 'none' }}>
+                {content}
+              </p>
+            )}
           </div>
 
           {shownReactions.length > 0 && (
@@ -147,7 +179,8 @@ const MessageBubble = ({
           {showTime && (
             <p className={`mt-1 px-0.5 text-[11px] font-light text-foreground/35 tabular-nums flex items-center gap-1.5 ${isMine ? 'justify-end' : ''}`}>
               <span>{formatTime(createdAt)}</span>
-              {isMine && <span>{readAt ? 'read' : 'sent'}</span>}
+              {isViewOnce && <span>view once</span>}
+              {isMine && <span>{isViewOnce && viewedAt ? 'opened' : readAt ? 'read' : 'sent'}</span>}
             </p>
           )}
 
@@ -182,8 +215,8 @@ const MessageBubble = ({
                 </Popover>
               )}
 
-              {onReply && (
-                <button onClick={() => onReply(id, content)} aria-label="reply" className="quiet p-2 rounded-md">
+              {replyAllowed && (
+                <button onClick={() => onReply?.(id, content)} aria-label="reply" className="quiet p-2 rounded-md">
                   <Reply className="w-[15px] h-[15px]" />
                 </button>
               )}
@@ -214,4 +247,4 @@ const MessageBubble = ({
   );
 };
 
-export default MessageBubble;
+export default memo(MessageBubble);

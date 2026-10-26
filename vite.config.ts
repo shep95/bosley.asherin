@@ -74,7 +74,6 @@ export default defineConfig(({ mode }) => {
         manualChunks: {
           "react-vendor": ["react", "react-dom", "react-router-dom"],
           "supabase": ["@supabase/supabase-js"],
-          "motion": ["framer-motion"],
           "query": ["@tanstack/react-query"],
         },
       },
@@ -87,12 +86,11 @@ export default defineConfig(({ mode }) => {
       registerType: "autoUpdate",
       // Emit registerSW.js as a file instead of an inline script (CSP).
       injectRegister: "script-defer",
-      includeAssets: ["favicon.png", "favicon-192.png", "robots.txt"],
+      includeAssets: ["favicon.ico", "favicon.svg", "apple-touch-icon.png", "robots.txt"],
       manifest: {
-        name: "Bosley - Free Speech Social Platform",
+        name: "Bosley",
         short_name: "Bosley",
-        description:
-          "A modern social platform with real algorithm control, no engagement farming, and true free speech.",
+        description: "a quiet room on the internet. a chronological feed, no ads, no engagement farming.",
         theme_color: "#000000",
         background_color: "#000000",
         display: "standalone",
@@ -109,14 +107,49 @@ export default defineConfig(({ mode }) => {
             src: "/favicon.png",
             sizes: "512x512",
             type: "image/png",
-            purpose: "any maskable",
+            purpose: "any",
+          },
+          {
+            src: "/icon-maskable-512.png",
+            sizes: "512x512",
+            type: "image/png",
+            purpose: "maskable",
           },
         ],
       },
       workbox: {
-        globPatterns: ["**/*.{js,css,html,png,svg,webp,woff2}"],
-        // The wallpaper and code chunks are content-hashed; precaching them
-        // makes every repeat visit paint from disk.
+        // Precache only what the first paint needs: the shell, the entry and
+        // vendor chunks, the stylesheet, the Latin font files and the
+        // wallpaper. Route chunks are fetched on demand and then cached
+        // (they are content-hashed, so CacheFirst is always correct). The old
+        // config precached all ~60 chunks and every font subset (1.6 MB) on
+        // the first visit, competing with the page the visitor actually
+        // opened.
+        globPatterns: [
+          "index.html",
+          "assets/index-*.{js,css}",
+          "assets/react-vendor-*.js",
+          "assets/supabase-*.js",
+          "assets/query-*.js",
+          "assets/inter-latin-wght-normal-*.woff2",
+          "assets/instrument-serif-latin-400-*.woff2",
+          "assets/background-wallpaper-*.webp",
+          "favicon.svg",
+          "favicon-192.png",
+        ],
+        navigateFallback: "/index.html",
+        navigateFallbackDenylist: [/^\/api\//, /^\/\.well-known\//, /\.(?:txt|xml|json)$/],
+        runtimeCaching: [
+          {
+            urlPattern: ({ url, sameOrigin }) => sameOrigin && url.pathname.startsWith("/assets/"),
+            handler: "CacheFirst",
+            options: {
+              cacheName: "bosley-assets",
+              expiration: { maxEntries: 160, maxAgeSeconds: 60 * 60 * 24 * 60 },
+            },
+          },
+        ],
+        cleanupOutdatedCaches: true,
         maximumFileSizeToCacheInBytes: 3 * 1024 * 1024,
       },
     }),

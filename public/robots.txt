@@ -51,4 +51,4 @@ Disallow: /*.map$
 Disallow: /*.sql$
 Disallow: /*.bak$
 
-Sitemap: https://bosley.app/sitemap.xml
+Sitemap: https://bosley.asherin.com/sitemap.xml

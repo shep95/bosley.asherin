@@ -83,12 +83,25 @@ export default {
         shimmer: {
           "100%": { transform: "translateX(100%)" },
         },
+        // The like burst (was framer-motion): the heart pops, six sparks fly
+        // out along --dx/--dy set inline per spark.
+        "like-pop": {
+          "0%": { transform: "scale(0.6)" },
+          "50%": { transform: "scale(1.3)" },
+          "100%": { transform: "scale(1)" },
+        },
+        "like-spark": {
+          "0%": { transform: "translate(0, 0) scale(0.6)", opacity: "0.9" },
+          "100%": { transform: "translate(var(--dx), var(--dy)) scale(0.2)", opacity: "0" },
+        },
       },
       animation: {
         "accordion-down": "accordion-down 0.2s ease-out",
         "accordion-up": "accordion-up 0.2s ease-out",
         "fade-up": "fade-up 0.32s cubic-bezier(0.22, 1, 0.36, 1) both",
         shimmer: "shimmer 1.6s infinite",
+        "like-pop": "like-pop 0.35s ease-out",
+        "like-spark": "like-spark 0.5s ease-out forwards",
       },
     },
   },

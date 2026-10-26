@@ -21,7 +21,7 @@ interface EmptyStateProps {
  */
 const EmptyState = ({ title, description, actionLabel, actionTo, onAction, children }: EmptyStateProps) => (
   <div className="px-5 sm:px-8 py-14">
-    <p className="text-[1.375rem] font-extralight lowercase tracking-[-0.02em] text-foreground">{title}</p>
+    <p className="font-display text-[1.75rem] lowercase leading-tight text-foreground">{title}</p>
     <p className="mt-2 text-[14px] font-light text-foreground/50 max-w-md leading-relaxed">{description}</p>
     {actionLabel && (actionTo || onAction) && (
       <div className="mt-6">

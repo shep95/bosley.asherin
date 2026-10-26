@@ -1,5 +1,5 @@
 import PublicShell from "@/components/landing/PublicShell";
-import { Helmet } from "react-helmet-async";
+import { Helmet } from "@/components/Head";
 
 const TermsOfService = () => {
   return (
@@ -7,13 +7,13 @@ const TermsOfService = () => {
       <Helmet>
         <title>Terms of Service — Bosley</title>
         <meta name="description" content="The rules for using Bosley: accounts, content, prohibited conduct, file limits, and account termination." />
-        <link rel="canonical" href="https://bosley.app/terms" />
-        <meta property="og:url" content="https://bosley.app/terms" />
+        <link rel="canonical" href="https://bosley.asherin.com/terms" />
+        <meta property="og:url" content="https://bosley.asherin.com/terms" />
         <meta property="og:title" content="Terms of Service — Bosley" />
         <meta property="og:description" content="The rules for using Bosley." />
       </Helmet>
 <article className="doc">
-              <h1 className="text-[2.25rem] sm:text-[2.75rem] font-extralight lowercase tracking-[-0.035em] text-foreground mb-3">terms of service</h1>
+              <h1 className="font-display text-[2.6rem] sm:text-[3.2rem] lowercase leading-[0.95] text-foreground mb-4">terms of service</h1>
               <p className="text-[13px] font-light text-foreground/45 mb-12">last updated september 2026 · zorak corp</p>
               
               <div className="space-y-10 text-foreground/75 font-light text-[15.5px]">

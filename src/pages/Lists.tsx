@@ -19,24 +19,26 @@ const Lists = () => {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [touched, setTouched] = useState(false);
 
-  const { data: lists, isLoading } = useQuery({
+  const { data: lists, isLoading, isError, refetch } = useQuery({
     queryKey: ['lists', user?.id],
     queryFn: async () => {
       if (!user) return [];
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from('lists')
         .select('*')
         .eq('user_id', user.id)
         .order('created_at', { ascending: false });
 
+      if (error) throw error;
       if (!data) return [];
 
       // Get member counts
       const listIds = data.map(l => l.id);
-      const { data: members } = await supabase
+      const { data: members, error: membersError } = await supabase
         .from('list_members')
         .select('list_id')
         .in('list_id', listIds);
+      if (membersError) throw membersError;
 
       const countMap = new Map<string, number>();
       members?.forEach(m => countMap.set(m.list_id, (countMap.get(m.list_id) || 0) + 1));
@@ -77,7 +79,8 @@ const Lists = () => {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['lists'] });
       toast({ title: "list deleted" });
-    }
+    },
+    onError: () => toast({ title: "could not delete the list. try again.", variant: "destructive" })
   });
 
   const nameValid = newListName.trim().length > 0;
@@ -174,6 +177,13 @@ const Lists = () => {
             </div>
           ))}
         </div>
+      ) : isError ? (
+        <EmptyState
+          title="your lists did not load."
+          description="nothing was lost. check your connection and try again."
+          actionLabel="try again"
+          onAction={() => { void refetch(); }}
+        />
       ) : (
         <EmptyState
           title="no lists yet."

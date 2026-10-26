@@ -14,15 +14,16 @@ const Drafts = () => {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
 
-  const { data: drafts, isLoading } = useQuery({
+  const { data: drafts, isLoading, isError, refetch } = useQuery({
     queryKey: ['drafts', user?.id],
     queryFn: async () => {
       if (!user) return [];
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from('post_drafts')
         .select('*')
         .eq('user_id', user.id)
         .order('updated_at', { ascending: false });
+      if (error) throw error;
       return data || [];
     },
     enabled: !!user
@@ -35,8 +36,10 @@ const Drafts = () => {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['drafts'] });
+      queryClient.invalidateQueries({ queryKey: ['room-rail'] });
       toast({ title: "draft deleted" });
-    }
+    },
+    onError: () => toast({ title: "could not delete the draft. try again.", variant: "destructive" })
   });
 
   const formatDate = (dateString: string) => {
@@ -93,6 +96,13 @@ const Drafts = () => {
             </div>
           ))}
         </div>
+      ) : isError ? (
+        <EmptyState
+          title="your drafts did not load."
+          description="nothing was lost. check your connection and try again."
+          actionLabel="try again"
+          onAction={() => { void refetch(); }}
+        />
       ) : (
         <EmptyState
           title="nothing unfinished."

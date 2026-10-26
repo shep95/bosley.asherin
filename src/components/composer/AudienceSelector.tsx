@@ -7,10 +7,13 @@ import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
 import { useQuery } from "@tanstack/react-query";
 
+/** Matches posts.visibility (singular 'circle'; 'circles' was never readable by members). */
+export type ComposerVisibility = 'public' | 'circle';
+
 interface AudienceSelectorProps {
   selectedCircleIds: string[];
-  visibility: 'public' | 'circles';
-  onSelectionChange: (circleIds: string[], visibility: 'public' | 'circles') => void;
+  visibility: ComposerVisibility;
+  onSelectionChange: (circleIds: string[], visibility: ComposerVisibility) => void;
 }
 
 const AudienceSelector = ({ selectedCircleIds, visibility, onSelectionChange }: AudienceSelectorProps) => {
@@ -38,7 +41,7 @@ const AudienceSelector = ({ selectedCircleIds, visibility, onSelectionChange }: 
     
     onSelectionChange(
       newSelection, 
-      newSelection.length > 0 ? 'circles' : 'public'
+      newSelection.length > 0 ? 'circle' : 'public'
     );
   };
 
@@ -80,6 +83,7 @@ const AudienceSelector = ({ selectedCircleIds, visibility, onSelectionChange }: 
           <h4 className="font-light text-foreground">Who can see this?</h4>
           
           <button
+            type="button"
             onClick={handleSetPublic}
             className={`w-full flex items-center gap-3 p-3 rounded-lg border transition-colors ${
               visibility === 'public' && selectedCircleIds.length === 0

@@ -1,10 +1,12 @@
-import { User } from "lucide-react";
+import { useEffect, useState } from "react";
 import { cn } from "@/lib/utils";
 import { useStorageUrl } from "@/lib/storageUrl";
 
 interface UserAvatarProps {
   avatarUrl?: string | null;
   username?: string;
+  /** Display name; its first letter is the monogram when there is no photo. */
+  name?: string | null;
   isOwner?: boolean;
   /** sm 28px · md 40px · lg 64px. `xl` is kept for callers and renders as lg. */
   size?: "sm" | "md" | "lg" | "xl";
@@ -19,12 +21,21 @@ const sizeClasses = {
   xl: "w-16 h-16",
 };
 
-const iconSizeClasses = {
-  sm: "w-3.5 h-3.5",
-  md: "w-[18px] h-[18px]",
-  lg: "w-7 h-7",
-  xl: "w-7 h-7",
+const monogramClasses = {
+  sm: "text-[15px]",
+  md: "text-[22px]",
+  lg: "text-[34px]",
+  xl: "text-[34px]",
 };
+
+/** A stable, muted hue per person, so a face without a photo is still theirs. */
+function hueFor(name: string) {
+  let h = 0;
+  for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) >>> 0;
+  return h % 360;
+}
+
+const pixelSizes = { sm: 28, md: 40, lg: 64, xl: 64 } as const;
 
 const markClasses = {
   sm: "w-2 h-2 -top-px -right-px",
@@ -40,6 +51,7 @@ const markClasses = {
 const UserAvatar = ({
   avatarUrl,
   username,
+  name,
   isOwner = false,
   size = "md",
   className,
@@ -49,6 +61,12 @@ const UserAvatar = ({
   // avatar on screen costs no extra request.
   const resolvedAvatarUrl = useStorageUrl("avatars", avatarUrl);
   const showMark = showCrown && isOwner;
+  // A deleted or unreadable avatar falls back to the glyph, not a broken image.
+  const [broken, setBroken] = useState(false);
+  useEffect(() => setBroken(false), [resolvedAvatarUrl]);
+  const px = pixelSizes[size];
+  const initial = ((name || username || "").replace(/^@/, "").trim()[0] || "·").toUpperCase();
+  const hue = hueFor(username || "");
 
   return (
     <div className={cn("relative inline-block shrink-0", className)}>
@@ -58,18 +76,28 @@ const UserAvatar = ({
           sizeClasses[size],
         )}
       >
-        {resolvedAvatarUrl ? (
+        {resolvedAvatarUrl && !broken ? (
           <img
             src={resolvedAvatarUrl}
             alt={username || "avatar"}
+            width={px}
+            height={px}
+            onError={() => setBroken(true)}
             className="w-full h-full object-cover"
             loading="lazy"
             decoding="async"
             referrerPolicy="no-referrer"
           />
         ) : (
-          <div className="w-full h-full flex items-center justify-center">
-            <User className={cn("text-foreground/45", iconSizeClasses[size])} strokeWidth={1.5} />
+          <div
+            aria-hidden
+            className={cn("w-full h-full flex items-center justify-center font-display leading-none select-none", monogramClasses[size])}
+            style={{
+              background: `radial-gradient(120% 120% at 30% 20%, hsl(${hue} 22% 20%), hsl(${hue} 18% 9%))`,
+              color: `hsl(${hue} 40% 84%)`,
+            }}
+          >
+            {initial}
           </div>
         )}
       </div>

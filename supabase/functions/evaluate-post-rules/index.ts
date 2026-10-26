@@ -62,8 +62,10 @@ Deno.serve(async (req) => {
       try {
         const fired = await evaluateRule(admin, rule);
         if (fired) {
+          // Throws on any failed write: the catch below logs a failed run and
+          // the rule stays active so the next run can retry it.
           await executeAction(admin, rule);
-          await admin
+          const { error: ruleUpdateError } = await admin
             .from("post_rules")
             .update({
               trigger_count: (rule.trigger_count ?? 0) + 1,
@@ -74,21 +76,24 @@ Deno.serve(async (req) => {
               is_active: false,
             })
             .eq("id", rule.id);
-          await admin.from("post_rule_runs").insert({
+          if (ruleUpdateError) throw new Error(`could not update rule: ${ruleUpdateError.message}`);
+          const { error: runInsertError } = await admin.from("post_rule_runs").insert({
             rule_id: rule.id,
             user_id: rule.user_id,
             success: true,
             details: { trigger_type: rule.trigger_type, action_type: rule.action_type },
           });
+          if (runInsertError) console.error("post_rule_runs insert failed:", runInsertError.message);
           results.push({ rule_id: rule.id, fired: true });
         }
       } catch (e: any) {
-        await admin.from("post_rule_runs").insert({
+        const { error: failLogError } = await admin.from("post_rule_runs").insert({
           rule_id: rule.id,
           user_id: rule.user_id,
           success: false,
-          error_message: String(e?.message ?? e),
+          error_message: String(e?.message ?? e).slice(0, 500),
         });
+        if (failLogError) console.error("post_rule_runs insert failed:", failLogError.message);
         // Persist detail to post_rule_runs (owner-visible), but never leak
         // raw exception text back over HTTP.
         results.push({ rule_id: rule.id, error: "rule_failed" });
@@ -113,51 +118,65 @@ async function evaluateRule(admin: any, rule: any): Promise<boolean> {
   // Without this, a user could attach a low-threshold rule to someone else's
   // private/followers-only post and use the fire time as an engagement oracle.
   if (rule.post_id) {
-    const { data: owned } = await admin
+    const { data: owned, error } = await admin
       .from("posts")
       .select("id")
       .eq("id", rule.post_id)
       .eq("user_id", rule.user_id)
       .maybeSingle();
+    if (error) throw new Error(error.message);
     if (!owned) return false;
   }
   switch (rule.trigger_type) {
     case "likes_threshold": {
       if (!rule.post_id) return false;
-      const { count } = await admin
+      const { count, error } = await admin
         .from("post_likes")
         .select("*", { count: "exact", head: true })
         .eq("post_id", rule.post_id);
+      if (error) throw new Error(error.message);
       return (count ?? 0) >= (cfg.threshold ?? 100);
     }
     case "comments_threshold": {
       if (!rule.post_id) return false;
-      const { count } = await admin
+      const { count, error } = await admin
         .from("comments")
         .select("*", { count: "exact", head: true })
         .eq("post_id", rule.post_id);
+      if (error) throw new Error(error.message);
       return (count ?? 0) >= (cfg.threshold ?? 10);
     }
     case "time_after_post": {
       if (!rule.post_id) return false;
-      const { data: post } = await admin
+      const { data: post, error } = await admin
         .from("posts").select("created_at").eq("id", rule.post_id).maybeSingle();
+      if (error) throw new Error(error.message);
       if (!post) return false;
       const ageMin = (Date.now() - new Date(post.created_at).getTime()) / 60000;
       return ageMin >= (cfg.minutes ?? 60);
     }
     case "poll_winner": {
       if (!rule.post_id) return false;
-      const { data: poll } = await admin
+      const { data: poll, error: pollError } = await admin
         .from("polls").select("id, ends_at").eq("post_id", rule.post_id).maybeSingle();
+      if (pollError) throw new Error(pollError.message);
       if (!poll) return false;
       if (poll.ends_at && new Date(poll.ends_at) > new Date()) return false;
-      const { data: opts } = await admin
+      const { data: opts, error: optsError } = await admin
         .from("poll_options").select("id, option_text").eq("poll_id", poll.id);
-      const { data: votes } = await admin
-        .from("poll_votes").select("option_id").eq("poll_id", poll.id);
+      if (optsError) throw new Error(optsError.message);
+      // Exact per-option counts (a plain select of vote rows is capped at the
+      // API's max-rows and would undercount large polls).
       const counts = new Map<string, number>();
-      (votes ?? []).forEach((v: any) => counts.set(v.option_id, (counts.get(v.option_id) ?? 0) + 1));
+      await Promise.all((opts ?? []).map(async (o: any) => {
+        const { count, error: countError } = await admin
+          .from("poll_votes")
+          .select("*", { count: "exact", head: true })
+          .eq("poll_id", poll.id)
+          .eq("option_id", o.id);
+        if (countError) throw new Error(countError.message);
+        counts.set(o.id, count ?? 0);
+      }));
       let winner: any = null; let max = -1;
       (opts ?? []).forEach((o: any) => {
         const c = counts.get(o.id) ?? 0;
@@ -175,37 +194,73 @@ async function executeAction(admin: any, rule: any): Promise<void> {
   const cfg = rule.action_config ?? {};
   switch (rule.action_type) {
     case "create_post": {
-      await admin.from("posts").insert({
+      const { error } = await admin.from("posts").insert({
         user_id: rule.user_id,
         content: cfg.content ?? "",
         media_urls: cfg.media_urls ?? [],
         visibility: cfg.visibility ?? "public",
       });
+      if (error) throw new Error(`could not create the post: ${error.message}`);
       return;
     }
     case "archive_post": {
-      if (!rule.post_id) return;
-      await admin.from("posts").update({ visibility: "private" }).eq("id", rule.post_id);
+      if (!rule.post_id) throw new Error("no post to make private");
+      const { error } = await admin
+        .from("posts")
+        .update({ visibility: "private" })
+        .eq("id", rule.post_id)
+        .eq("user_id", rule.user_id);
+      if (error) throw new Error(`could not make the post private: ${error.message}`);
       return;
     }
     case "unpin_replace": {
-      await admin.from("profiles").update({ pinned_post_id: cfg.new_pinned_post_id ?? null })
+      // Pin the configured post (or, by default, the watched post) in place of
+      // the current first pin. Profiles store pins as pinned_post_ids uuid[].
+      const newId: string | null = cfg.new_pinned_post_id ?? rule.post_id ?? null;
+      if (!newId) throw new Error("no post to pin");
+      const { data: owned, error: ownedError } = await admin
+        .from("posts")
+        .select("id")
+        .eq("id", newId)
+        .eq("user_id", rule.user_id)
+        .maybeSingle();
+      if (ownedError) throw new Error(ownedError.message);
+      if (!owned) throw new Error("the post to pin is not yours or no longer exists");
+
+      const { data: profile, error: profileError } = await admin
+        .from("profiles")
+        .select("pinned_post_ids")
+        .eq("user_id", rule.user_id)
+        .maybeSingle();
+      if (profileError) throw new Error(profileError.message);
+      if (!profile) throw new Error("profile not found");
+
+      const current: string[] = Array.isArray(profile.pinned_post_ids) ? profile.pinned_post_ids : [];
+      // Drop the old first pin, then put the new one in front (no duplicates).
+      const next = [newId, ...current.slice(1).filter((id) => id !== newId)];
+      const { error } = await admin
+        .from("profiles")
+        .update({ pinned_post_ids: next })
         .eq("user_id", rule.user_id);
+      if (error) throw new Error(`could not update the pinned post: ${error.message}`);
       return;
     }
     case "send_dm": {
-      if (!cfg.receiver_id || !cfg.content) return;
+      if (!cfg.receiver_id || !cfg.content) throw new Error("the message has no content");
       // SECURITY: a send_dm rule may only message the rule owner (self-DM).
       // action_config is user-mutable via direct DB writes; without this gate a
       // user could set receiver_id to any UUID and use the service-role context
       // to spam arbitrary users.
-      if (cfg.receiver_id !== rule.user_id) return;
-      await admin.from("messages").insert({
+      if (cfg.receiver_id !== rule.user_id) throw new Error("rules can only message their owner");
+      const { error } = await admin.from("messages").insert({
         sender_id: rule.user_id,
         receiver_id: cfg.receiver_id,
         content: cfg.content,
       });
+      if (error) throw new Error(`could not send the message: ${error.message}`);
       return;
     }
+    default:
+      throw new Error(`unknown action: ${String(rule.action_type)}`);
   }
 }

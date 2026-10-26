@@ -1,10 +1,5 @@
 import { parseContentWithLinks, ParsedTextPart } from "@/lib/linkUtils";
 import { ExternalLink, AlertTriangle } from "lucide-react";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
 
 interface FormattedContentProps {
   content: string;
@@ -23,17 +18,15 @@ const FormattedContent = ({ content, className = "" }: FormattedContentProps) =>
         
         if (part.isBlocked) {
           return (
-            <Tooltip key={index}>
-              <TooltipTrigger asChild>
-                <span className="text-red-500/60 line-through cursor-not-allowed inline-flex items-center gap-1">
-                  <AlertTriangle className="w-3 h-3" />
-                  [blocked link]
-                </span>
-              </TooltipTrigger>
-              <TooltipContent className="glass-panel border">
-                <p className="text-sm">This link has been blocked for safety</p>
-              </TooltipContent>
-            </Tooltip>
+            <span
+              key={index}
+              title="this link was blocked for safety"
+              aria-label="blocked link"
+              className="text-destructive/70 line-through cursor-not-allowed inline-flex items-center gap-1"
+            >
+              <AlertTriangle className="w-3 h-3" aria-hidden="true" />
+              blocked link
+            </span>
           );
         }
         

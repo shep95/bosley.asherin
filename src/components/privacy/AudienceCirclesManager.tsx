@@ -7,6 +7,8 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { ChevronRight, Loader2 } from "lucide-react";
 import UserAvatar from "@/components/UserAvatar";
+import { useDebouncedValue, escapeLike } from "@/lib/useDebouncedValue";
+import { friendlyDbError, isUniqueViolation } from "@/lib/dbErrors";
 
 interface Circle {
   id: string;
@@ -27,6 +29,7 @@ const AudienceCirclesManager = () => {
   const [newCircleName, setNewCircleName] = useState("");
   const [selectedCircle, setSelectedCircle] = useState<Circle | null>(null);
   const [memberSearch, setMemberSearch] = useState("");
+  const debouncedSearch = useDebouncedValue(memberSearch.trim(), 300);
 
   // Fetch user's circles
   const { data: circles, isLoading } = useQuery({
@@ -73,19 +76,23 @@ const AudienceCirclesManager = () => {
   });
 
   // Search for users to add
+  // Debounced 300ms: one request when typing pauses, not one per keystroke.
   const { data: searchResults } = useQuery({
-    queryKey: ['user-search', memberSearch],
+    queryKey: ['user-search', debouncedSearch],
     queryFn: async () => {
-      if (!memberSearch || memberSearch.length < 2) return [];
-      const { data } = await supabase
+      const term = escapeLike(debouncedSearch);
+      if (term.length < 2 || !user) return [];
+      const { data, error } = await supabase
         .from('profiles')
         .select('user_id, username, display_name, avatar_url')
-        .ilike('username', `%${memberSearch}%`)
-        .neq('user_id', user?.id)
+        .ilike('username', `%${term}%`)
+        .neq('user_id', user.id)
         .limit(5);
+      if (error) throw error;
       return data || [];
     },
-    enabled: memberSearch.length >= 2
+    enabled: debouncedSearch.length >= 2 && !!user,
+    placeholderData: (prev) => prev,
   });
 
   // Create circle
@@ -102,10 +109,9 @@ const AudienceCirclesManager = () => {
       queryClient.invalidateQueries({ queryKey: ['audience-circles'] });
       toast({ title: "circle created" });
     },
-    onError: (error: any) => {
+    onError: (error) => {
       toast({
-        title: "could not create the circle",
-        description: error.message?.includes('duplicate') ? "you already have a circle with that name." : error.message,
+        title: isUniqueViolation(error) ? "you already have a circle with that name." : friendlyDbError(error, "could not create the circle. try again."),
         variant: "destructive"
       });
     }
@@ -124,7 +130,8 @@ const AudienceCirclesManager = () => {
       setSelectedCircle(null);
       queryClient.invalidateQueries({ queryKey: ['audience-circles'] });
       toast({ title: "circle removed" });
-    }
+    },
+    onError: (e) => toast({ title: friendlyDbError(e, "could not remove the circle. try again."), variant: "destructive" }),
   });
 
   // Add member to circle
@@ -141,10 +148,9 @@ const AudienceCirclesManager = () => {
       queryClient.invalidateQueries({ queryKey: ['circle-members'] });
       toast({ title: "added" });
     },
-    onError: (error: any) => {
+    onError: (error) => {
       toast({
-        title: "could not add them",
-        description: error.message?.includes('duplicate') ? "they are already in this circle." : error.message,
+        title: isUniqueViolation(error) ? "they are already in this circle." : friendlyDbError(error, "could not add them. try again."),
         variant: "destructive"
       });
     }
@@ -162,7 +168,8 @@ const AudienceCirclesManager = () => {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['circle-members'] });
       toast({ title: "removed" });
-    }
+    },
+    onError: (e) => toast({ title: friendlyDbError(e, "could not remove them. try again."), variant: "destructive" }),
   });
 
   const canCreate = !!newCircleName.trim() && !createCircle.isPending;
@@ -279,7 +286,7 @@ const AudienceCirclesManager = () => {
                       {memberSearch.length >= 2 && searchResults?.length === 0 && (
                         <p className="mt-2 text-[12px] font-light text-foreground/40">nobody by that name.</p>
                       )}
-                      {searchResults && searchResults.length > 0 && (
+                      {memberSearch.trim().length >= 2 && searchResults && searchResults.length > 0 && (
                         <ul className="mt-1">
                           {searchResults.map((profile) => (
                             <li key={profile.user_id}>

@@ -32,7 +32,7 @@ npm run dev               # http://localhost:8080
   `https://<your-domain>/dashboard` (and the Vercel preview pattern `https://*-<team>.vercel.app/dashboard`) to the redirect allow-list.
 - **Auth → Providers → Google:** enable it if you want the "continue with Google" button. Sign-in uses Supabase's own OAuth with PKCE; nothing third-party sits in the auth path.
 - **Edge function secrets** (`supabase secrets set …`):
-  - `ALLOWED_ORIGINS` — comma-separated browser origins, e.g. `https://bosley.app,https://www.bosley.app`
+  - `ALLOWED_ORIGINS` — comma-separated browser origins, e.g. `https://bosley.asherin.com`
   - `ALLOWED_ORIGIN_PATTERN` — optional regex for previews, e.g. `^https://bosley[a-z0-9-]*\.vercel\.app$`
 - **Apply the schema and functions:**
 

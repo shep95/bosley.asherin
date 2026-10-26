@@ -1,24 +1,38 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import DashboardLayout, { useRefresh } from "@/components/layout/DashboardLayout";
 import PostComposer from "@/components/feed/PostComposer";
 import PostCard from "@/components/feed/PostCard";
 import FeedControls from "@/components/feed/FeedControls";
 import FeedSkeleton from "@/components/feed/FeedSkeleton";
+import LoadMoreSentinel from "@/components/feed/LoadMoreSentinel";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query";
 import { RefreshCw, WifiOff, CloudUpload } from "lucide-react";
 import PageHeader from "@/components/layout/PageHeader";
 import EmptyState from "@/components/ui/empty-state";
 import { isPostAllowedInFeed } from "@/lib/linkUtils";
 import { useOfflineSync } from "@/hooks/useOfflineSync";
+import { enrichPosts, type FeedPost } from "@/lib/postFeed";
+
+/** A host greets you by name. Time of day is local to the reader. */
+function greeting(name?: string) {
+  const h = new Date().getHours();
+  const part = h < 5 ? "late night" : h < 12 ? "good morning" : h < 18 ? "good afternoon" : "good evening";
+  return `${part}${name ? `, ${name}` : ""}. newest first, nothing reordered.`;
+}
 
 // Founder username - posts from this account appear in Founder tab
 const FOUNDER_USERNAME = "asher";
 
+const PAGE_SIZE = 20;
+
+/** Keyset cursor: the last row of the previous page, ordered (created_at, id) desc. */
+type Cursor = { created_at: string; id: string };
+type FeedPage = { posts: FeedPost[]; rawCount: number; cursor: Cursor | null };
+
 const Dashboard = () => {
   const [feedMode, setFeedMode] = useState("chronological");
-  const [visibleCount, setVisibleCount] = useState(30);
   const { user } = useAuth();
   const queryClient = useQueryClient();
   const refresh = useRefresh();
@@ -45,125 +59,102 @@ const Dashboard = () => {
     staleTime: 1000 * 60 * 60 // Cache for 1 hour
   });
 
-  // The founder id only changes what is fetched in founder mode. Keying every
-  // feed on it made the founder lookup resolving mid-flight invalidate the
-  // chronological feed, so every visit fetched 100 posts twice and re-ran the
-  // whole engagement/profile fan-out for an identical result.
+  // The founder id only changes what is fetched in founder mode, so only the
+  // founder feed is keyed on it. Every key carries the viewer id so switching
+  // accounts never shows the previous account's likes or bookmarks.
   const founderId = founderProfile?.user_id;
-  const { data: posts, isLoading, isFetching, refetch } = useQuery({
-    queryKey: feedMode === 'founder' ? ['posts', 'founder', founderId] : ['posts', feedMode],
+  const {
+    data,
+    isPending,
+    isError,
+    isFetching,
+    isFetchingNextPage,
+    isFetchNextPageError,
+    hasNextPage,
+    fetchNextPage,
+    refetch,
+  } = useInfiniteQuery({
+    queryKey: feedMode === 'founder' ? ['posts', user?.id, 'founder', founderId] : ['posts', user?.id, feedMode],
     // Founder mode has nothing to show until the id is known; running it early
     // would fetch the unfiltered firehose and then discard it.
-    enabled: feedMode !== 'founder' || !!founderId,
-    queryFn: async () => {
+    enabled: !!user && (feedMode !== 'founder' || !!founderId),
+    initialPageParam: null as Cursor | null,
+    // Only a short page from the server means the end. A page that the
+    // client-side filters emptied is not the end.
+    getNextPageParam: (last: FeedPage) => (last.rawCount < PAGE_SIZE ? undefined : last.cursor ?? undefined),
+    queryFn: async ({ pageParam }): Promise<FeedPage> => {
       let query = supabase
         .from('posts')
-        .select('*');
+        .select('*')
+        .order('created_at', { ascending: false })
+        .order('id', { ascending: false });
 
-      if (feedMode === 'chronological') {
-        query = query.order('created_at', { ascending: false });
-      } else if (feedMode === 'founder' && founderId) {
-        // Only show founder's posts
-        query = query.eq('user_id', founderId).order('created_at', { ascending: false });
+      if (feedMode === 'founder' && founderId) {
+        query = query.eq('user_id', founderId);
       } else if (feedMode === 'friends' && user) {
-        // Get followed users
-        const { data: follows } = await supabase
-          .from('follows')
-          .select('following_id')
-          .eq('follower_id', user.id);
-        
-        const followedIds = follows?.map(f => f.following_id) || [];
+        // Who the viewer follows, cached briefly so each page does not re-ask.
+        const followedIds = await queryClient.fetchQuery({
+          queryKey: ['following-ids', user.id],
+          staleTime: 60_000,
+          queryFn: async () => {
+            const { data: follows, error } = await supabase
+              .from('follows')
+              .select('following_id')
+              .eq('follower_id', user.id);
+            if (error) throw error;
+            return (follows ?? []).map(f => f.following_id);
+          },
+        });
         // Following nobody means an empty feed, not the whole firehose.
-        if (followedIds.length === 0) return [];
-        query = query.in('user_id', followedIds).order('created_at', { ascending: false });
-      } else {
-        // Interest-based - could add ML later, for now show popular
-        query = query.order('created_at', { ascending: false });
+        if (followedIds.length === 0) return { posts: [], rawCount: 0, cursor: null };
+        query = query.in('user_id', followedIds);
+      }
+      // chronological and interest: everything, newest first.
+
+      if (pageParam) {
+        query = query.or(
+          `created_at.lt."${pageParam.created_at}",and(created_at.eq."${pageParam.created_at}",id.lt.${pageParam.id})`,
+        );
       }
 
-      const { data: rawPostsData, error } = await query.limit(100);
+      const { data: rawPostsData, error } = await query.limit(PAGE_SIZE);
       if (error) throw error;
+      const raw = rawPostsData ?? [];
+      const last = raw[raw.length - 1];
 
       // Filter out expired posts and posts with harmful content (for Latest/For You tabs)
       const now = new Date();
-      const postsData = (rawPostsData || []).filter(post => {
-        // Check expiration
+      const postsData = raw.filter(post => {
         if (post.expires_at && new Date(post.expires_at) <= now) return false;
-        
-        // Apply content filter for Latest and For You tabs (not Founder or Following)
         if (feedMode === 'chronological' || feedMode === 'interest') {
-          if (!isPostAllowedInFeed(post.content, post.media_urls)) {
-            return false;
-          }
+          if (!isPostAllowedInFeed(post.content, post.media_urls ?? undefined)) return false;
         }
-        
         return true;
       });
 
-      if (postsData.length === 0) return [];
-
-      const userIds = [...new Set(postsData.map(p => p.user_id))];
-      const postIds = postsData.map(p => p.id);
-
-      // These four reads do not depend on each other. Awaiting them one after
-      // another cost four sequential round trips before the feed could paint;
-      // issued together they cost one. Engagement totals are aggregated in the
-      // database rather than by downloading every like and comment row, which
-      // previously made a popular post arbitrarily expensive to display.
-      const [profilesRes, engagementRes, userLikesRes, userBookmarksRes] = await Promise.all([
-        supabase
-          .from('profiles')
-          .select('user_id, username, display_name, avatar_url')
-          .in('user_id', userIds),
-        supabase.rpc('get_post_engagement', { post_ids: postIds }),
-        user
-          ? supabase.from('post_likes').select('post_id').eq('user_id', user.id).in('post_id', postIds)
-          : Promise.resolve({ data: [] as { post_id: string }[] }),
-        user
-          ? supabase.from('bookmarks').select('post_id').eq('user_id', user.id).in('post_id', postIds)
-          : Promise.resolve({ data: [] as { post_id: string }[] }),
-      ]);
-
-      const profilesMap = new Map(profilesRes.data?.map(p => [p.user_id, p]) || []);
-
-      const likesCountMap = new Map<string, number>();
-      const commentsCountMap = new Map<string, number>();
-      for (const row of engagementRes.data || []) {
-        likesCountMap.set(row.post_id, Number(row.likes_count) || 0);
-        commentsCountMap.set(row.post_id, Number(row.comments_count) || 0);
-      }
-
-      const userLikedSet = new Set(userLikesRes.data?.map(l => l.post_id) || []);
-      const userBookmarkedSet = new Set(userBookmarksRes.data?.map(b => b.post_id) || []);
-
-      return postsData.map(post => ({
-        ...post,
-        profiles: profilesMap.get(post.user_id) || null,
-        likesCount: likesCountMap.get(post.id) || 0,
-        commentsCount: commentsCountMap.get(post.id) || 0,
-        isLiked: userLikedSet.has(post.id),
-        isBookmarked: userBookmarkedSet.has(post.id),
-      }));
+      return {
+        posts: await enrichPosts(postsData, user?.id),
+        rawCount: raw.length,
+        cursor: last ? { created_at: last.created_at, id: last.id } : null,
+      };
     }
   });
+
+  const posts = data?.pages.flatMap((p) => p.posts) ?? [];
+  // Pending covers "waiting for the session / founder id" too, so the empty
+  // state never flashes before the first page. A founder account that does
+  // not exist is simply an empty feed.
+  const showSkeleton = isPending && !(feedMode === 'founder' && founderProfile === null);
 
   const handleRefresh = () => {
     refetch();
   };
 
-  // Reset visible count when feed mode changes
-  useEffect(() => {
-    setVisibleCount(30);
-  }, [feedMode]);
-
-  const visiblePosts = posts?.slice(0, visibleCount) ?? [];
-  const hasMore = (posts?.length ?? 0) > visibleCount;
-
   return (
     <DashboardLayout>
       <PageHeader
         title="feed"
-        subtitle="newest first. nothing is reordered for you."
+        subtitle={greeting(user?.user_metadata?.username as string | undefined)}
         actions={
           <button onClick={handleRefresh} disabled={isFetching} aria-label="refresh" className="quiet p-2 rounded-md">
             <RefreshCw className={`w-4 h-4 ${isFetching ? "animate-spin" : ""}`} />
@@ -195,37 +186,39 @@ const Dashboard = () => {
 
       <PostComposer />
 
-      {isLoading ? (
+      {showSkeleton ? (
         <FeedSkeleton count={4} />
-      ) : posts && posts.length > 0 ? (
+      ) : isError && posts.length === 0 ? (
+        <EmptyState
+          title="the feed did not load."
+          description="check your connection and try again."
+          actionLabel="try again"
+          onAction={() => refetch()}
+        />
+      ) : posts.length > 0 || hasNextPage ? (
         <div className="stagger">
-          {visiblePosts.map((post, idx) => (
+          {posts.map((post, idx) => (
             <div key={post.id} style={{ "--i": Math.min(idx, 8) } as React.CSSProperties}>
               <PostCard
                 post={post}
                 likesCount={post.likesCount}
                 commentsCount={post.commentsCount}
+                repostCount={post.repostCount}
                 isLiked={post.isLiked}
+                isReposted={post.isReposted}
                 isBookmarked={post.isBookmarked}
+                hasPoll={post.hasPoll}
+                quotedPost={post.quotedPost}
               />
             </div>
           ))}
-          {hasMore ? (
-            <div className="px-5 sm:px-8 py-6">
-              <button
-                onClick={() => setVisibleCount((c) => c + 30)}
-                className="text-[14px] text-foreground hover:text-signal transition-colors"
-              >
-                more <span className="text-foreground/40 tabular-nums ml-2">{visiblePosts.length} of {posts.length}</span>
-              </button>
-            </div>
-          ) : (
-            posts.length > 30 && (
-              <p className="px-5 sm:px-8 py-6 text-[13px] font-light text-foreground/40">
-                that is everything. {posts.length} posts.
-              </p>
-            )
-          )}
+          <LoadMoreSentinel
+            hasMore={!!hasNextPage}
+            isLoading={isFetchingNextPage}
+            isError={isFetchNextPageError}
+            onLoadMore={() => { if (!isFetchingNextPage) fetchNextPage(); }}
+            endLabel={posts.length > PAGE_SIZE ? `that is everything. ${posts.length} posts.` : undefined}
+          />
         </div>
       ) : (
         <EmptyState

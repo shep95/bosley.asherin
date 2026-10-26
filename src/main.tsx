@@ -1,5 +1,4 @@
 import { createRoot } from "react-dom/client";
-import { HelmetProvider } from "react-helmet-async";
 import App from "./App.tsx";
 import { installConsoleGuard } from "./lib/consoleGuard";
 import { supabaseConfigMissing } from "./integrations/supabase/client";
@@ -59,8 +58,6 @@ createRoot(document.getElementById("root")!).render(
   supabaseConfigMissing ? (
     <ConfigMissing />
   ) : (
-    <HelmetProvider>
-      <App />
-    </HelmetProvider>
+    <App />
   ),
 );

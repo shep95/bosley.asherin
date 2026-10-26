@@ -28,11 +28,33 @@ const BATCH_LIMIT = 100;
 type CacheEntry = { url: string; expiresAt: number };
 
 const cache = new Map<string, CacheEntry>();
+// Objects that could not be signed (deleted, or nobody signed in) are
+// remembered briefly so a feed full of them does not re-ask on every remount.
+const FAILED_MS = 60 * 1000;
+const failedUntil = new Map<string, number>();
 const inFlight = new Map<string, Promise<string | null>>();
 const queues = new Map<StorageBucket, Map<string, Array<(url: string | null) => void>>>();
 const scheduled = new Set<StorageBucket>();
 
 const keyOf = (bucket: StorageBucket, path: string) => `${bucket}:${path}`;
+
+// A sign-in (or account switch) changes what may be signed, so forget failures.
+try {
+  supabase.auth.onAuthStateChange(() => {
+    failedUntil.clear();
+  });
+} catch {
+  /* auth not available in this environment */
+}
+
+/** decodeURIComponent throws on a malformed escape such as "%E0%A4%A"; keep the raw text instead. */
+function safeDecode(value: string): string {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return value;
+  }
+}
 
 /**
  * Storage values are historically inconsistent: some rows hold a bare object
@@ -45,14 +67,14 @@ export function extractStorageObjectPath(bucket: StorageBucket, value: string): 
 
   const publicMarker = `/storage/v1/object/public/${bucket}/`;
   const pIdx = value.indexOf(publicMarker);
-  if (pIdx !== -1) return decodeURIComponent(value.substring(pIdx + publicMarker.length));
+  if (pIdx !== -1) return safeDecode(value.substring(pIdx + publicMarker.length));
 
   const signMarker = `/storage/v1/object/sign/${bucket}/`;
   const sIdx = value.indexOf(signMarker);
   if (sIdx !== -1) {
     const after = value.substring(sIdx + signMarker.length);
     const q = after.indexOf("?");
-    return decodeURIComponent(q === -1 ? after : after.substring(0, q));
+    return safeDecode(q === -1 ? after : after.substring(0, q));
   }
 
   // Not one of ours. Third-party image URLs are a classic de-anonymisation
@@ -93,6 +115,7 @@ function flush(bucket: StorageBucket) {
     for (const [path, resolvers] of batch) {
       const url = signed[path] ?? null;
       if (url) cache.set(keyOf(bucket, path), { url, expiresAt: now + CACHE_MS });
+      else failedUntil.set(keyOf(bucket, path), now + FAILED_MS);
       inFlight.delete(keyOf(bucket, path));
       for (const resolve of resolvers) resolve(url);
     }
@@ -117,6 +140,10 @@ export function getSignedUrl(bucket: StorageBucket, path: string): Promise<strin
   const pending = inFlight.get(key);
   if (pending) return pending;
 
+  const failedAt = failedUntil.get(key);
+  if (failedAt && failedAt > Date.now()) return Promise.resolve(null);
+  if (failedAt) failedUntil.delete(key);
+
   const promise = new Promise<string | null>((resolve) => {
     let queue = queues.get(bucket);
     if (!queue) {
@@ -140,48 +167,64 @@ export function peekSignedUrl(bucket: StorageBucket, path: string): string | nul
   return null;
 }
 
+export type StorageUrlStatus = "empty" | "loading" | "ready" | "failed";
+
 /**
  * Resolves a stored value (path, public URL or legacy signed URL) to something
- * renderable. Values that are already absolute non-storage URLs pass straight
- * through without touching the network.
+ * renderable, and says whether it is still loading or has failed. Loading and
+ * failed used to share `null`, so media that could never be signed (a deleted
+ * object, or any signed-out visitor) pulsed forever.
  */
-export function useStorageUrl(bucket: StorageBucket, value: string | null | undefined) {
+export function useStorageUrlState(
+  bucket: StorageBucket,
+  value: string | null | undefined,
+): { url: string | null; status: StorageUrlStatus } {
   const objectPath = useMemo(
     () => (value ? extractStorageObjectPath(bucket, value) || null : null),
     [bucket, value],
   );
   const needsSigning = !!objectPath && !objectPath.startsWith("http");
 
-  const [url, setUrl] = useState<string | null>(() => {
-    if (!objectPath) return null;
-    if (!needsSigning) return objectPath;
-    return peekSignedUrl(bucket, objectPath);
-  });
+  const initial = (): { url: string | null; status: StorageUrlStatus } => {
+    if (!objectPath) return { url: null, status: "empty" };
+    if (!needsSigning) return { url: objectPath, status: "ready" };
+    const cached = peekSignedUrl(bucket, objectPath);
+    return cached ? { url: cached, status: "ready" } : { url: null, status: "loading" };
+  };
+
+  const [state, setState] = useState(initial);
 
   useEffect(() => {
     if (!objectPath) {
-      setUrl(null);
+      setState({ url: null, status: "empty" });
       return;
     }
     if (!needsSigning) {
-      setUrl(objectPath);
+      setState({ url: objectPath, status: "ready" });
       return;
     }
 
     const cached = peekSignedUrl(bucket, objectPath);
     if (cached) {
-      setUrl(cached);
+      setState({ url: cached, status: "ready" });
       return;
     }
 
     let cancelled = false;
+    setState((prev) => (prev.status === "loading" ? prev : { url: null, status: "loading" }));
     getSignedUrl(bucket, objectPath).then((resolved) => {
-      if (!cancelled) setUrl(resolved);
+      if (cancelled) return;
+      setState(resolved ? { url: resolved, status: "ready" } : { url: null, status: "failed" });
     });
     return () => {
       cancelled = true;
     };
   }, [bucket, objectPath, needsSigning]);
 
-  return url;
+  return state;
+}
+
+/** Back-compat: the resolved URL only (null while loading, when empty, or on failure). */
+export function useStorageUrl(bucket: StorageBucket, value: string | null | undefined) {
+  return useStorageUrlState(bucket, value).url;
 }

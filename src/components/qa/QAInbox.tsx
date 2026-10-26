@@ -2,10 +2,12 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useInfiniteQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { Loader2, Trash2 } from "lucide-react";
 import EmptyState from "@/components/ui/empty-state";
+import LoadMoreButton from "@/components/LoadMoreButton";
+import { friendlyDbError } from "@/lib/dbErrors";
 
 interface Question {
   id: string;
@@ -18,6 +20,7 @@ interface Question {
 }
 
 const ANSWER_MAX = 1000;
+const PAGE = 50;
 
 const SectionLabel = ({ children }: { children: React.ReactNode }) => (
   <p className="px-5 sm:px-8 pt-6 pb-2 text-[10px] font-light uppercase tracking-[0.24em] text-foreground/35">
@@ -37,20 +40,30 @@ const QAInbox = () => {
   const [answer, setAnswer] = useState("");
   const [isPublic, setIsPublic] = useState(true);
 
-  const { data: questions, isLoading } = useQuery({
+  // 50 questions per page, newest first, continued by created_at.
+  const questionsQuery = useInfiniteQuery({
     queryKey: ['anonymous-questions', user?.id],
-    queryFn: async () => {
-      if (!user) return [];
-      const { data } = await supabase
+    queryFn: async ({ pageParam }) => {
+      let query = supabase
         .from('anonymous_questions')
         .select('*')
-        .eq('recipient_user_id', user.id)
+        .eq('recipient_user_id', user!.id)
         .eq('is_hidden', false)
-        .order('created_at', { ascending: false });
-      return data || [];
+        .order('created_at', { ascending: false })
+        .limit(PAGE);
+      if (pageParam) query = query.lt('created_at', pageParam);
+      const { data, error } = await query;
+      if (error) throw error;
+      const rows = data ?? [];
+      return { rows, nextCursor: rows.length === PAGE ? rows[rows.length - 1].created_at : null };
     },
+    initialPageParam: null as string | null,
+    getNextPageParam: (last) => last.nextCursor,
     enabled: !!user
   });
+  const questions = questionsQuery.data?.pages.flatMap((p) => p.rows);
+  const isLoading = questionsQuery.isLoading;
+  const hasMore = !!questionsQuery.hasNextPage;
 
   const answerQuestion = useMutation({
     mutationFn: async () => {
@@ -90,7 +103,8 @@ const QAInbox = () => {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['anonymous-questions'] });
       toast({ title: "question removed" });
-    }
+    },
+    onError: (e) => toast({ title: friendlyDbError(e, "could not remove it. try again."), variant: "destructive" }),
   });
 
   const formatDate = (dateString: string) => {
@@ -153,7 +167,7 @@ const QAInbox = () => {
     <div>
       {unanswered.length > 0 && (
         <>
-          <SectionLabel>unanswered · {unanswered.length}</SectionLabel>
+          <SectionLabel>unanswered{hasMore ? "" : ` · ${unanswered.length}`}</SectionLabel>
           <div className="stagger">
             {unanswered.map((q, idx) => {
               const isOpen = selectedQuestion?.id === q.id;
@@ -218,7 +232,7 @@ const QAInbox = () => {
 
       {answered.length > 0 && (
         <>
-          <SectionLabel>answered · {answered.length}</SectionLabel>
+          <SectionLabel>answered{hasMore ? "" : ` · ${answered.length}`}</SectionLabel>
           <div className="stagger">
             {answered.map((q, idx) => (
               <div key={q.id} className="row px-5 sm:px-8 py-4" style={{ "--i": Math.min(idx, 8) } as React.CSSProperties}>
@@ -239,6 +253,11 @@ const QAInbox = () => {
           </div>
         </>
       )}
+      <LoadMoreButton
+        hasMore={hasMore}
+        loading={questionsQuery.isFetchingNextPage}
+        onClick={() => { void questionsQuery.fetchNextPage(); }}
+      />
     </div>
   );
 };
