@@ -2,6 +2,7 @@ import { createRoot } from "react-dom/client";
 import App from "./App.tsx";
 import { installConsoleGuard } from "./lib/consoleGuard";
 import { supabaseConfigMissing } from "./integrations/supabase/client";
+import "sonner/dist/styles.css";
 import "./index.css";
 
 installConsoleGuard();

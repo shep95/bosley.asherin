@@ -2,6 +2,7 @@ import { defineConfig, loadEnv } from "vite";
 import react from "@vitejs/plugin-react-swc";
 import path from "path";
 import { VitePWA } from "vite-plugin-pwa";
+import { cspStylesPlugin } from "./scripts/cspStylesPlugin";
 
 /**
  * Resolve the Supabase connection from whichever names are present.
@@ -81,6 +82,7 @@ export default defineConfig(({ mode }) => {
     chunkSizeWarningLimit: 900,
   },
   plugins: [
+    cspStylesPlugin(),
     react(),
     VitePWA({
       registerType: "autoUpdate",
