@@ -1,0 +1,15 @@
+# Default gitleaks rules, plus one allowlist: IndexNow keys are public by
+# design. Search engines fetch them from https://<host>/<key>.txt to confirm
+# ownership, so the key file, the spec that names it and the plan that
+# repeats it are not secrets. Fixture keys in usel's own tests are fake.
+[extend]
+useDefault = true
+
+[allowlist]
+description = "public IndexNow verification keys and usel test fixtures"
+paths = [
+  '''(^|/)seo/site\.usel\.json$''',
+  '''(^|/)seo/reports/''',
+  '''(^|/)seo/usel/tests/''',
+  '''(^|/)[0-9a-f]{32}\.txt$''',
+]

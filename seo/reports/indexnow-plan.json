@@ -1,0 +1,25 @@
+{
+  "supported_participants": [
+    "bing",
+    "yandex",
+    "naver",
+    "seznam",
+    "yep",
+    "internetarchive",
+    "amazonbot"
+  ],
+  "hosts_to_notify": "submissions are opt-in; see CLI submit-indexnow",
+  "key": "db1dd76ba06c5601e56ae058b355d5db",
+  "urlList": [
+    "https://bosley.asherin.com/",
+    "https://bosley.asherin.com/for",
+    "https://bosley.asherin.com/for/writers",
+    "https://bosley.asherin.com/for/communities",
+    "https://bosley.asherin.com/for/journalists",
+    "https://bosley.asherin.com/for/quiet",
+    "https://bosley.asherin.com/contact",
+    "https://bosley.asherin.com/privacy",
+    "https://bosley.asherin.com/terms",
+    "https://bosley.asherin.com/install"
+  ]
+}

@@ -1,0 +1,179 @@
+{
+  "usel": 1,
+  "site_name": "bosley",
+  "base_url": "https://bosley.asherin.com",
+  "default_locale": "en",
+  "market_targets": "all",
+  "engines": [
+    "all"
+  ],
+  "sitemap": false,
+  "robots": {
+    "manage": true,
+    "allow_search": true,
+    "block_ai_training": true,
+    "disallow": [
+      "/dashboard",
+      "/feed",
+      "/explore",
+      "/search",
+      "/notifications",
+      "/messages",
+      "/bookmarks",
+      "/lists",
+      "/communities",
+      "/events",
+      "/drafts",
+      "/rules",
+      "/templates",
+      "/compose",
+      "/calendar",
+      "/profile",
+      "/settings",
+      "/sponsors",
+      "/subscription",
+      "/scheduled",
+      "/analytics",
+      "/user/",
+      "/post/",
+      "/admin",
+      "/login",
+      "/signup",
+      "/recovery",
+      "/reset-password",
+      "/.git",
+      "/.svn",
+      "/.env",
+      "/_headers",
+      "/_redirects",
+      "/src/",
+      "/supabase/",
+      "/*.map$",
+      "/*.sql$",
+      "/*.bak$"
+    ]
+  },
+  "pages": [
+    {
+      "id": "home",
+      "public": true,
+      "index": true,
+      "render": false,
+      "locales": {
+        "en": {
+          "path": "/"
+        }
+      },
+      "lastmod": "2026-10-25"
+    },
+    {
+      "id": "for",
+      "public": true,
+      "index": true,
+      "render": false,
+      "locales": {
+        "en": {
+          "path": "/for"
+        }
+      },
+      "lastmod": "2026-10-25"
+    },
+    {
+      "id": "for-writers",
+      "public": true,
+      "index": true,
+      "render": false,
+      "locales": {
+        "en": {
+          "path": "/for/writers"
+        }
+      },
+      "lastmod": "2026-10-25"
+    },
+    {
+      "id": "for-communities",
+      "public": true,
+      "index": true,
+      "render": false,
+      "locales": {
+        "en": {
+          "path": "/for/communities"
+        }
+      },
+      "lastmod": "2026-10-25"
+    },
+    {
+      "id": "for-journalists",
+      "public": true,
+      "index": true,
+      "render": false,
+      "locales": {
+        "en": {
+          "path": "/for/journalists"
+        }
+      },
+      "lastmod": "2026-10-25"
+    },
+    {
+      "id": "for-quiet",
+      "public": true,
+      "index": true,
+      "render": false,
+      "locales": {
+        "en": {
+          "path": "/for/quiet"
+        }
+      },
+      "lastmod": "2026-10-25"
+    },
+    {
+      "id": "contact",
+      "public": true,
+      "index": true,
+      "render": false,
+      "locales": {
+        "en": {
+          "path": "/contact"
+        }
+      },
+      "lastmod": "2026-10-25"
+    },
+    {
+      "id": "privacy",
+      "public": true,
+      "index": true,
+      "render": false,
+      "locales": {
+        "en": {
+          "path": "/privacy"
+        }
+      },
+      "lastmod": "2026-10-25"
+    },
+    {
+      "id": "terms",
+      "public": true,
+      "index": true,
+      "render": false,
+      "locales": {
+        "en": {
+          "path": "/terms"
+        }
+      },
+      "lastmod": "2026-10-25"
+    },
+    {
+      "id": "install",
+      "public": true,
+      "index": true,
+      "render": false,
+      "locales": {
+        "en": {
+          "path": "/install"
+        }
+      },
+      "lastmod": "2026-10-25"
+    }
+  ],
+  "indexnow_key": "db1dd76ba06c5601e56ae058b355d5db"
+}
