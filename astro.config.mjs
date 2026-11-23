@@ -13,8 +13,10 @@ export default defineConfig({
   adapter: vercel({
     // no analytics, no speed insights: nothing third-party runs in a visitor's browser.
     webAnalytics: { enabled: false },
-    // src/middleware.ts runs at the edge in front of the comment api.
-    middlewareMode: "edge",
+    // src/middleware.ts runs inside the server function, in front of the apis
+    // and visitor pages. edge mode let vercel's cache hand one route's answer
+    // to another (an api returned the wallpaper), so it stays classic.
+    middlewareMode: "classic",
     imageService: false,
   }),
   integrations: [
