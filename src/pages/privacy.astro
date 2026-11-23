@@ -1,0 +1,23 @@
+---
+import Page from "../layouts/Page.astro";
+---
+<Page path="/privacy" eyebrow="privacy" title="what we keep, and what we don't." description="bosley's privacy notice: no accounts, no cookies, no analytics; anonymous comments; exactly what is stored and for how long.">
+  <p><strong>short version:</strong> we keep the words you choose to post, and close to nothing else.</p>
+  <h2>when you read</h2>
+  <ul>
+    <li>no cookies, analytics, ad pixels, fingerprinting, or third-party scripts.</li>
+    <li>“for you”, what you've read, your saved name and your signing key live in your browser's storage. they are never sent to us. clear your site data and they're gone.</li>
+    <li>the site is hosted on vercel. like any web host, vercel's network briefly processes request details (such as ip address) to deliver pages and stop attacks. our code does not read, log or store them, and we keep no request logs of our own.</li>
+  </ul>
+  <h2>when you comment</h2>
+  <ul>
+    <li>we store: your words, the name you chose (if any), your public signing key and signature (if you signed), the minute it was posted, and a scrambled fingerprint of your private delete token.</li>
+    <li>we do not store your ip address, browser, device, location, or any identifier.</li>
+    <li>to slow down spam, the server counts recent comments per connection, in memory only, under a scrambled key that is never written down and is lost when the server restarts.</li>
+    <li>you can remove your own comment from the same browser at any time. removal deletes the file; it isn't hidden, it's gone.</li>
+  </ul>
+  <h2>images</h2>
+  <p>every image on bosley is re-made when the site is built. camera details, gps location, dates and editing history are stripped, so nothing hidden in a photo reaches you.</p>
+  <h2>contact</h2>
+  <p>questions or removal requests: <a href="mailto:asher@bosley.app">asher@bosley.app</a>.</p>
+</Page>

@@ -1,0 +1,23 @@
+---
+const year = new Date().getUTCFullYear();
+---
+<footer class="site-footer wrap">
+  <p>no accounts · no ads · no tracking · no database</p>
+  <ul>
+    <li><a class="quiet" href="/privacy">privacy</a></li>
+    <li><a class="quiet" href="/rules">conversation rules</a></li>
+    <li><a class="quiet" href="/rss.xml">rss</a></li>
+    <li><a class="quiet" href="/.well-known/security.txt">security</a></li>
+  </ul>
+  <p>© {year} zorak corp</p>
+</footer>
+<style>
+  /* no border, no band: small words at the bottom of the room */
+  .site-footer {
+    display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--s-3) var(--s-6);
+    padding: var(--s-9) 0 var(--s-6); font-size: var(--t-xs); font-weight: 300; letter-spacing: 0.02em;
+  }
+  p { color: rgb(243 244 246 / 0.32); }
+  ul { display: flex; flex-wrap: wrap; gap: var(--s-5); list-style: none; padding: 0; }
+  ul a { color: rgb(243 244 246 / 0.4); }
+</style>

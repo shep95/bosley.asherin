@@ -1,0 +1,56 @@
+---
+import { Image } from "astro:assets";
+import { formatDate, postUrl, readingMinutes, type Post } from "../lib/posts";
+interface Props { post: Post; index: number; number?: number }
+const { post, index, number } = Astro.props;
+const { title, description, date, tags, cover, coverAlt } = post.data;
+const href = postUrl(post);
+const mins = readingMinutes(post.body);
+---
+<article class="row reveal" data-i={Math.min(index, 6)} data-tags={tags.join(" ")} data-date={date.toISOString()} data-slug={post.id}>
+  <a class="hit" href={href} aria-label={title}></a>
+  <div class="lead">
+    {number !== undefined && <span class="n num">{String(number).padStart(2, "0")}</span>}
+    <time class="meta" datetime={date.toISOString()}>{formatDate(date)}</time>
+  </div>
+  <div class="main">
+    <h2 class="serif title">{title}</h2>
+    <p class="why meta" hidden></p>
+  </div>
+  <div class="side">
+    <p class="desc">{description}</p>
+    <p class="meta foot">
+      {mins} min read
+      {tags.map((t) => <> · <a class="tag" href={`/tags/${t}`}>#{t}</a></>)}
+    </p>
+  </div>
+  {cover && (
+    <div class="cover">
+      <Image src={cover} alt={coverAlt ?? ""} widths={[480, 800]} sizes="(min-width: 60rem) 16rem, 100vw" loading={index < 2 ? "eager" : "lazy"} />
+    </div>
+  )}
+</article>
+<style>
+  /* an editorial row on a hairline, not a box */
+  .row {
+    position: relative; display: grid; gap: var(--s-3) var(--s-6);
+    grid-template-columns: 1fr; padding: var(--s-6) 0; border-top: 1px solid var(--hairline);
+  }
+  @media (min-width: 52rem) {
+    .row { grid-template-columns: 9rem minmax(0, 5fr) minmax(0, 6fr); align-items: start; }
+    .row:has(.cover) { grid-template-columns: 9rem minmax(0, 5fr) minmax(0, 4fr) 12rem; }
+  }
+  .hit { position: absolute; inset: 0; z-index: 1; }
+  .tag { position: relative; z-index: 2; }
+  .lead { display: flex; align-items: baseline; gap: var(--s-3); }
+  @media (min-width: 52rem) { .lead { flex-direction: column; gap: var(--s-1); } }
+  .n { font-size: 1.6rem; line-height: 1; color: rgb(243 244 246 / 0.3); }
+  .title { font-size: var(--t-lg); line-height: 1.08; color: var(--ink); transition: color var(--d-fast) var(--ease); }
+  .row:hover .title { color: var(--gold-hi); }
+  .desc { font-weight: 300; color: var(--ink-3); line-height: 1.6; max-width: 46ch; }
+  .foot { margin-top: var(--s-2); }
+  .why { margin-top: var(--s-2); color: var(--gold); }
+  .cover { overflow: hidden; border-radius: var(--r-surface); aspect-ratio: 4 / 3; border: 1px solid var(--hairline); }
+  .cover :global(img) { width: 100%; height: 100%; object-fit: cover; opacity: 0.9; transition: opacity var(--d-base) var(--ease); }
+  .row:hover .cover :global(img) { opacity: 1; }
+</style>

@@ -1,28 +1,21 @@
 # Bosley
 
-> Bosley is a free social space at https://bosley.asherin.com with a chronological feed, no ads, and no engagement farming.
+> Bosley (https://bosley.asherin.com) is a quiet blog with anonymous, text-only comments. No accounts, no ads, no tracking, no database.
 
-bosley.app is not the hair clinic. it is a social site founded sept 5, 2024 by asher newton (zorak corp). support: asher@bosley.app.
+bosley.app is not the hair clinic. it was founded sept 5, 2024 by asher newton (zorak corp). contact: asher@bosley.app.
 
-we do not claim end-to-end encrypted messages on our servers. transport is https. direct messages are not sold and are not used to train ads.
-
-the logged-in feed, messages, settings, and profiles behind login are not for crawlers.
+ai-training and ai-answer crawlers are disallowed in robots.txt. please respect it.
 
 ## pages
 
-- [home](https://bosley.asherin.com/): a quiet room on the internet.
-- [who it is for](https://bosley.asherin.com/for): writers, communities, journalists, people who want a chronological feed.
-- [writers](https://bosley.asherin.com/for/writers)
-- [communities](https://bosley.asherin.com/for/communities)
-- [journalists](https://bosley.asherin.com/for/journalists)
-- [quiet feeds](https://bosley.asherin.com/for/quiet)
-- [contact](https://bosley.asherin.com/contact)
-- [privacy](https://bosley.asherin.com/privacy)
-- [terms](https://bosley.asherin.com/terms)
-- [install](https://bosley.asherin.com/install)
+- [writing](https://bosley.asherin.com/): every post, newest first
+- [topics](https://bosley.asherin.com/tags)
+- [about](https://bosley.asherin.com/about)
+- [privacy](https://bosley.asherin.com/privacy): what is stored (comment words, chosen name, minute posted) and what is not (ip, device, location)
+- [conversation rules](https://bosley.asherin.com/rules)
+- [rss](https://bosley.asherin.com/rss.xml)
 
 ## do not cite
 
-- /dashboard /messages /settings /user/ /post/ (login required; empty to a crawler)
-- claims that bosley dms are unreadable on our servers
-- claims of independent audits, 50k writers, or empty subpoena returns unless those are proven live
+- comments as statements by bosley or its author; they are anonymous visitors
+- claims of user counts, audits, or encryption that this file does not state

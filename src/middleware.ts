@@ -1,0 +1,114 @@
+/**
+ * edge middleware — astro deploys this as a vercel edge function in front of
+ * every on-demand route (the comment api). static pages are served straight
+ * from vercel's cdn and never reach it; they hold nothing private.
+ *
+ * Purpose: stop link/content scrapers and abusive automation at the edge,
+ * before they reach a page or the comment api.
+ *
+ *  - Blocks known scraper / AI-training / bulk-download user agents.
+ *  - Blocks HTML requests with no User-Agent at all (almost always scripts).
+ *  - Blocks hot-linking of the app shell from foreign origins via `Sec-Fetch-*`
+ *    (a page embedded in someone else's iframe or fetched cross-site).
+ *  - Lets only GET/HEAD through, except POST/DELETE to the comment api.
+ *
+ * Legitimate search engines (Googlebot, Bingbot, DuckDuckBot, Applebot, …) and
+ * social link-preview fetchers are allowed so SEO and share cards keep working.
+ */
+import { defineMiddleware } from "astro:middleware";
+
+// static assets (content-hashed, harmless to fetch) skip the checks.
+const SKIP = /^\/(_astro\/|favicon|apple-touch-icon|icon-maskable|og-image|manifest|robots\.txt|sitemap|rss\.xml|llms\.txt|\.well-known\/|[0-9a-f]{32}\.txt)/;
+
+const BLOCKED_UA = [
+  // AI training / LLM retrieval crawlers
+  /GPTBot/i, /ChatGPT-User/i, /OAI-SearchBot/i, /CCBot/i, /anthropic-ai/i, /ClaudeBot/i, /Claude-Web/i,
+  /Google-Extended/i, /Bytespider/i, /PerplexityBot/i, /Amazonbot/i, /Diffbot/i, /cohere-ai/i,
+  /Meta-ExternalAgent/i, /FacebookBot/i, /Applebot-Extended/i, /YouBot/i, /ImagesiftBot/i, /Omgili/i,
+  /Timpibot/i, /VelenPublicWebCrawler/i, /webzio/i, /Scrapy/i, /DataForSeoBot/i,
+  // SEO / marketing scrapers that hammer sites
+  /AhrefsBot/i, /SemrushBot/i, /MJ12bot/i, /DotBot/i, /BLEXBot/i, /PetalBot/i, /serpstatbot/i, /ZoominfoBot/i,
+  // Generic scripted clients
+  /python-requests/i, /python-urllib/i, /aiohttp/i, /httpx\//i, /Go-http-client/i, /Java\//i, /okhttp/i,
+  /libwww-perl/i, /^curl\//i, /^Wget\//i, /node-fetch/i, /axios\//i, /undici/i, /HeadlessChrome/i,
+  /PhantomJS/i, /Puppeteer/i, /Playwright/i, /Selenium/i, /scrapy/i, /HTTrack/i, /wget/i, /WebCopier/i,
+  /Offline Explorer/i, /SiteSucker/i, /Teleport/i, /WebZIP/i, /larbin/i, /nutch/i, /zgrab/i, /masscan/i,
+  /nikto/i, /sqlmap/i, /nmap/i, /Nessus/i, /WPScan/i, /dirbuster/i, /gobuster/i, /feroxbuster/i,
+];
+
+// Explicit allow-list wins over the block-list (Google's crawler shares tokens
+// with Google-Extended, for example).
+const ALLOWED_UA = [
+  /Googlebot/i, /Storebot-Google/i, /Google-InspectionTool/i, /AdsBot-Google/i, /Mediapartners-Google/i,
+  /bingbot/i, /BingPreview/i, /DuckDuckBot/i, /Applebot(?!-Extended)/i, /YandexBot/i, /Baiduspider/i,
+  /Slurp/i, /facebookexternalhit/i, /Twitterbot/i, /LinkedInBot/i, /Slackbot/i, /Discordbot/i,
+  /TelegramBot/i, /WhatsApp/i, /Pinterestbot/i, /redditbot/i, /Embedly/i, /Iframely/i, /Mastodon/i,
+  /vercel-screenshot/i, /vercel-favicon/i, /Vercel Edge Functions/i,
+];
+
+// Paths that only vulnerability scanners ask for. Answering 404 instantly (and
+// never reaching the SPA shell) keeps them out of logs and off the origin.
+const SCANNER_PATHS =
+  /^\/(\.env(\..*)?|\.git(\/.*)?|\.svn(\/.*)?|\.hg(\/.*)?|\.DS_Store|\.htaccess|\.htpasswd|wp-(admin|login|content|includes|json)(\/.*)?|wp-login\.php|xmlrpc\.php|phpmyadmin(\/.*)?|pma(\/.*)?|adminer(\.php)?|cgi-bin(\/.*)?|vendor\/phpunit(\/.*)?|\.aws(\/.*)?|\.ssh(\/.*)?|config\.(php|json|yml|yaml)|composer\.(json|lock)|package-lock\.json|server-status|actuator(\/.*)?|_debugbar(\/.*)?|telescope(\/.*)?|\.well-known\/openid-configuration)$/i;
+const SCANNER_EXTENSIONS = /\.(php|asp|aspx|jsp|cgi|pl|sh|bak|old|orig|sql|sqlite|db|log|ini|env|pem|key)$/i;
+
+// routes of the old app (accounts, dms, dashboards). they no longer exist: answer 410 gone
+// so search engines drop them quickly instead of retrying a 404.
+const RETIRED = /^\/(dashboard|explore|search|notifications|messages|bookmarks|lists|communities|events|drafts|templates|compose|calendar|profile|settings|sponsors|scheduled|analytics|user|post|reset-password|auth|login|signup|install|contact|terms)(\/.*)?$/;
+const WRITABLE = /^\/api\/comments$/;
+
+function deny(status: number, reason: string): Response {
+  return new Response(reason, {
+    status,
+    headers: {
+      "content-type": "text/plain; charset=utf-8",
+      "cache-control": "no-store",
+      "x-robots-tag": "noindex, nofollow",
+    },
+  });
+}
+
+export const onRequest = defineMiddleware((context, next) => {
+  const request = context.request;
+  const url = new URL(request.url);
+  if (SKIP.test(url.pathname)) return next();
+  // while building (and in the dev server) prerendered pages pass through here
+  // with no real request: let them render. at the vercel edge (`EdgeRuntime` is
+  // defined) every visitor request is checked, static pages included.
+  if (context.isPrerendered && typeof (globalThis as { EdgeRuntime?: string }).EdgeRuntime === "undefined") return next();
+  const ua = request.headers.get("user-agent") ?? "";
+
+  if (SCANNER_PATHS.test(url.pathname) || SCANNER_EXTENSIONS.test(url.pathname)) {
+    return deny(404, "Not found");
+  }
+  const accept = request.headers.get("accept") ?? "";
+  const wantsHtml = accept.includes("text/html") || accept === "*/*" || accept === "";
+
+  const method = request.method;
+  const writing = (method === "POST" || method === "DELETE") && WRITABLE.test(url.pathname);
+  if (method !== "GET" && method !== "HEAD" && !writing) {
+    return deny(405, "Method not allowed");
+  }
+  if (RETIRED.test(url.pathname)) return deny(410, "Gone");
+
+  const allowed = ALLOWED_UA.some((re) => re.test(ua));
+  if (!allowed) {
+    if (wantsHtml && ua.trim().length === 0) return deny(403, "Forbidden");
+    if (BLOCKED_UA.some((re) => re.test(ua))) return deny(403, "Forbidden");
+  }
+
+  // A browser fetching our document from another site's page (embedding /
+  // cross-site scripted fetch). Top-level navigations and same-origin loads
+  // set `navigate` / `same-origin`.
+  const fetchSite = request.headers.get("sec-fetch-site");
+  const fetchMode = request.headers.get("sec-fetch-mode");
+  const fetchDest = request.headers.get("sec-fetch-dest");
+  if (fetchSite === "cross-site" && fetchMode !== "navigate" && fetchDest !== "document") {
+    return deny(403, "Forbidden");
+  }
+  if (fetchDest === "iframe" || fetchDest === "frame" || fetchDest === "embed" || fetchDest === "object") {
+    return deny(403, "Forbidden");
+  }
+
+  return next();
+});

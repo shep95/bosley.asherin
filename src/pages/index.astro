@@ -1,0 +1,75 @@
+---
+import Base from "../layouts/Base.astro";
+import PostCard from "../components/PostCard.astro";
+import { getPosts } from "../lib/posts";
+
+const posts = await getPosts();
+const promises = [
+  ["no sign-ups", "nothing to join. read, and if you want, say something."],
+  ["anonymous", "comments say anonymous unless you choose a name."],
+  ["no database", "posts are files in the code. comments are small text files."],
+  ["no tracking", "no cookies, no analytics, no ads, nothing following you."],
+];
+---
+<Base path="/">
+  <section class="hero wrap">
+    <p class="eyebrow reveal">bosley · est. 2024</p>
+    <h1 class="hero-line reveal" data-i="1">a quiet room<br /><em>on the internet.</em></h1>
+    <p class="lede reveal" data-i="2">writing, and a place to answer it. leave when you want.</p>
+    <dl class="promises reveal" data-i="3">
+      {promises.map(([k, v]) => (
+        <div><dt class="eyebrow">{k}</dt><dd>{v}</dd></div>
+      ))}
+    </dl>
+  </section>
+
+  <section class="feed wrap" aria-labelledby="feed-h">
+    <div class="feed-head">
+      <h2 id="feed-h" class="eyebrow">the writing</h2>
+      {posts.length > 1 && (
+        <div class="tabs" role="radiogroup" aria-label="order the writing">
+          <button type="button" class="quiet tab" role="radio" aria-checked="true" data-mode="latest">latest</button>
+          <button type="button" class="quiet tab" role="radio" aria-checked="false" data-mode="foryou">for you</button>
+        </div>
+      )}
+    </div>
+    <p class="foryou-note meta" hidden>“for you” learns from what you finish reading, on this device only. nothing about it is sent anywhere.</p>
+
+    {posts.length === 0 ? (
+      <div class="empty reveal" data-i="4">
+        <h3 class="serif">nothing has been written here yet.</h3>
+        <p class="meta">the first words are on their way. follow with <a class="link" href="/rss.xml">rss</a> — no account, no email.</p>
+      </div>
+    ) : (
+      <ol class="list" data-feed>
+        {posts.map((post, i) => <li><PostCard post={post} index={i + 4} number={posts.length - i} /></li>)}
+      </ol>
+    )}
+    {posts.length > 0 && <p class="end meta">that's everything, for now.</p>}
+  </section>
+</Base>
+
+<script>
+  import { initFeed } from "../scripts/feed";
+  initFeed();
+</script>
+
+<style>
+  .hero { padding: clamp(var(--s-8), 12vw, 10rem) 0 var(--s-8); }
+  .hero h1 { margin-top: var(--s-6); }
+  .lede { margin-top: var(--s-6); max-width: 30rem; }
+  .promises { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--s-4) var(--s-5); max-width: 34rem; margin-top: var(--s-7); }
+  .promises div { border-top: 1px solid var(--hairline-strong); padding-top: var(--s-3); }
+  .promises dd { margin-top: var(--s-1); font-size: var(--t-sm); font-weight: 300; color: var(--ink-2); line-height: 1.5; }
+  @media (min-width: 52rem) { .promises { grid-template-columns: repeat(4, minmax(0, 1fr)); max-width: none; } }
+
+  .feed { padding-top: var(--s-7); }
+  .feed-head { display: flex; align-items: center; justify-content: space-between; gap: var(--s-4); padding-bottom: var(--s-3); }
+  .tabs { display: flex; gap: var(--s-5); }
+  .foryou-note { padding-bottom: var(--s-4); }
+  .list { list-style: none; padding: 0; border-bottom: 1px solid var(--hairline); }
+
+  .empty { border-top: 1px solid var(--hairline); padding: var(--s-8) 0; display: grid; gap: var(--s-3); }
+  .empty h3 { font-size: var(--t-xl); line-height: 1.05; color: var(--ink); max-width: 18ch; }
+  .end { padding-top: var(--s-5); }
+</style>

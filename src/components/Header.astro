@@ -1,0 +1,43 @@
+---
+/** the header is a line, not a bar: a wordmark and three words. it only gains
+    a surface once content scrolls under it. */
+const here = Astro.url.pathname.replace(/\/$/, "") || "/";
+const links = [
+  { href: "/", label: "writing" },
+  { href: "/tags", label: "topics" },
+  { href: "/about", label: "about" },
+];
+const on = (href: string) => (href === "/" ? here === "/" : here === href || here.startsWith(href + "/"));
+---
+<header class="site-header">
+  <div class="wrap bar">
+    <a class="word serif" href="/" aria-label="bosley, home">Bosley</a>
+    <nav aria-label="primary">
+      <ul>
+        {links.map((l) => (
+          <li><a class="quiet tab" href={l.href} aria-current={on(l.href) ? "page" : undefined}>{l.label}</a></li>
+        ))}
+        <li><a class="quiet tab" href="/rss.xml" title="follow with rss — no account needed">rss</a></li>
+      </ul>
+    </nav>
+  </div>
+</header>
+
+<style>
+  .site-header { position: sticky; top: 0; z-index: 20; border-bottom: 1px solid transparent; }
+  /* the surface arrives only after content starts passing underneath — driven by scroll, no script */
+  @supports (animation-timeline: scroll()) {
+    .site-header { animation: settle linear both; }
+    /* separate rule on purpose: minifiers fold a timeline into the animation shorthand, which browsers reject */
+    .site-header.site-header { animation-timeline: scroll(); animation-range: 0 64px; }
+    @keyframes settle { to { background: var(--scrim-solid); border-bottom-color: var(--hairline); } }
+  }
+  @supports not (animation-timeline: scroll()) {
+    .site-header { background: var(--scrim-solid); border-bottom-color: var(--hairline); }
+  }
+  .bar { display: flex; align-items: center; justify-content: space-between; height: 3.5rem; }
+  .word { font-size: 22px; line-height: 1; letter-spacing: -0.01em; color: var(--ink); }
+  ul { display: flex; align-items: center; gap: var(--s-5); list-style: none; padding: 0; }
+  nav a { display: inline-flex; align-items: center; min-height: 44px; font-size: var(--t-sm); font-weight: 300; }
+  @media (max-width: 26rem) { ul { gap: var(--s-4); } }
+</style>
