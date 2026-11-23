@@ -2,17 +2,16 @@
 interface Props { post: string }
 const { post } = Astro.props;
 ---
-<section class="comments prose-col" id="conversation" aria-labelledby="conv-h" data-comments={post}>
+<section class="comments col" id="conversation" aria-labelledby="conv-h" data-comments={post}>
   <header class="c-head">
-    <h2 id="conv-h" class="display">the conversation</h2>
-    <p class="count faint" data-count aria-live="polite"></p>
+    <h2 id="conv-h" class="serif">the conversation</h2>
+    <p class="count meta" data-count aria-live="polite"></p>
   </header>
 
   <ol class="c-list" data-list aria-busy="true">
-    <li class="c-skel" aria-hidden="true"><span></span><span></span><span></span></li>
-    <li class="c-skel" aria-hidden="true"><span></span><span></span></li>
+    <li class="c-loading meta">opening the conversation…</li>
   </ol>
-  <p class="c-empty faint" data-empty hidden>no one has said anything yet. you could be first.</p>
+  <p class="c-empty meta" data-empty hidden>no one has said anything yet. you could be first.</p>
 
   <form class="c-form" data-form novalidate>
     <label for="c-text" class="eyebrow">say something</label>
@@ -38,17 +37,17 @@ const { post } = Astro.props;
     <div class="named" data-named hidden>
       <label for="c-name" class="visually-hidden">your name</label>
       <input id="c-name" class="field" name="name" maxlength="32" autocomplete="nickname" placeholder="a name to sign with" />
-      <p class="faint small">
-        a private key is made on this device and signs what you write, so no one else can use your name's mark{" "}
+      <p class="note">
+        a private key is made on this device and signs what you write, so no one else can use your name's mark
         <span class="tag-preview" data-tag-preview></span>. it never leaves this browser. <button type="button" class="linkish" data-forget-key>forget my key</button>
       </p>
     </div>
 
     <div class="c-actions">
-      <p id="c-hint" class="faint small">text only · up to 1,000 characters · no account, no email</p>
-      <button class="btn btn--gold" type="submit" data-submit>post</button>
+      <p id="c-hint" class="note">text only · up to 1,000 characters · no account, no email</p>
+      <button class="btn btn--signal" type="submit" data-submit>post</button>
     </div>
-    <p id="c-status" class="status small" data-status role="status" aria-live="polite"></p>
+    <p id="c-status" class="status" data-status role="status" aria-live="polite"></p>
   </form>
 </section>
 
@@ -58,57 +57,51 @@ const { post } = Astro.props;
 </script>
 
 <style>
-  .comments { margin-top: var(--s-9); padding-top: var(--s-7); border-top: 1px solid var(--line-soft); }
-  .c-head { display: flex; align-items: baseline; justify-content: space-between; gap: var(--s-4); }
-  .c-head h2 { font-size: var(--t-2xl); }
-  .count { font-size: var(--t-sm); }
+  .comments { margin-top: var(--s-9); }
+  .c-head { display: flex; align-items: baseline; justify-content: space-between; gap: var(--s-4); padding-bottom: var(--s-4); }
+  .c-head h2 { font-size: var(--t-xl); line-height: 1; color: var(--ink); }
 
-  .c-list { list-style: none; padding: 0; margin-top: var(--s-5); display: grid; gap: var(--s-3); }
-  .c-list :global(.c) {
-    padding: var(--s-4) var(--s-5); border-radius: var(--radius-lg); background: var(--surface);
-    border: 1px solid var(--line-soft); animation: rise var(--d-slow) var(--ease-emph) both;
-  }
-  .c-list :global(.c.is-new) { animation: rise var(--d-slow) var(--ease-emph) both, arrive 1.6s var(--ease-out) both; }
-  @keyframes arrive { from { box-shadow: 0 0 0 1px var(--gold), 0 0 40px -8px var(--gold-glow); } to { box-shadow: 0 0 0 1px transparent, 0 0 0 0 transparent; } }
-  .c-list :global(.c-top) { display: flex; align-items: center; gap: var(--s-2); font-size: var(--t-sm); }
-  .c-list :global(.c-name) { font-weight: 600; color: var(--ink); }
-  .c-list :global(.c-anon) { color: var(--ink-muted); font-style: italic; font-family: var(--font-display); font-size: var(--t-md); }
-  .c-list :global(.c-tag) { font-family: var(--font-mono); font-size: var(--t-xs); color: var(--gold); border: 1px solid var(--line); border-radius: var(--radius-pill); padding: 0 0.45rem; }
-  .c-list :global(.c-time) { color: var(--ink-faint); font-size: var(--t-xs); margin-left: auto; }
-  .c-list :global(.c-text) { margin-top: var(--s-2); white-space: pre-wrap; overflow-wrap: anywhere; color: oklch(0.9 0.022 78); }
+  /* each voice on its own hairline, nothing boxed */
+  .c-list { list-style: none; padding: 0; }
+  .c-list :global(.c), .c-loading { border-top: 1px solid var(--hairline); padding: var(--s-5) 0; }
+  .c-list :global(.c) { animation: arrive var(--d-slow) var(--ease) both; }
+  /* a new comment arrives with its edge lit gold, which settles to a hairline */
+  .c-list :global(.c.is-new) { border-top-color: var(--gold); transition: border-top-color 1.4s var(--ease) 0.6s; }
+  .c-list :global(.c.is-new.settled) { border-top-color: var(--hairline); }
+  .c-list :global(.c-top) { display: flex; align-items: baseline; gap: var(--s-3); }
+  .c-list :global(.c-name) { font-size: var(--t-sm); font-weight: 500; color: var(--ink); }
+  .c-list :global(.c-anon) { font-family: var(--font-display); font-style: italic; font-size: var(--t-md); line-height: 1; color: var(--ink-3); }
+  .c-list :global(.c-tag) { font-family: var(--font-mono); font-size: var(--t-xs); color: var(--gold); }
+  .c-list :global(.c-time) { margin-left: auto; font-size: var(--t-xs); font-weight: 300; color: var(--ink-4); }
+  .c-list :global(.c-text) { margin-top: var(--s-2); white-space: pre-wrap; overflow-wrap: anywhere; color: var(--ink-2); font-weight: 350; }
   .c-list :global(.c-remove) { margin-top: var(--s-2); }
-  .c-skel { display: grid; gap: 8px; padding: var(--s-5); border-radius: var(--radius-lg); background: var(--surface); border: 1px solid var(--line-soft); }
-  .c-skel span { height: 10px; border-radius: 6px; background: linear-gradient(90deg, var(--line-soft), var(--surface-raised), var(--line-soft)); background-size: 200% 100%; animation: shimmer 1.4s linear infinite; }
-  .c-skel span:first-child { width: 30%; } .c-skel span:nth-child(2) { width: 90%; } .c-skel span:nth-child(3) { width: 70%; }
-  @keyframes shimmer { to { background-position: -200% 0; } }
-  .c-empty { margin-top: var(--s-4); }
+  .c-empty { border-top: 1px solid var(--hairline); padding: var(--s-5) 0; }
 
-  .c-form { margin-top: var(--s-6); display: grid; gap: var(--s-3); padding: var(--s-5); border-radius: var(--radius-lg); background: linear-gradient(180deg, var(--surface), transparent); border: 1px solid var(--line-soft); }
+  .c-form { display: grid; gap: var(--s-3); border-top: 1px solid var(--hairline-strong); padding-top: var(--s-6); margin-top: var(--s-2); }
   .ink-wrap { position: relative; }
   .ink-wrap textarea { display: block; }
-  /* the ink line fills as you write — a quiet sense of progress, never a nag */
-  .ink { position: absolute; left: 12px; right: 12px; bottom: 0; height: 2px; border-radius: 2px; background: linear-gradient(90deg, var(--gold-deep), var(--gold-bright)); transform-origin: left; transform: scaleX(var(--fill, 0)); transition: transform var(--d-fast) var(--ease-out), opacity var(--d-base) var(--ease-out); opacity: 0.85; pointer-events: none; }
+  /* the ink line: fills under the words as they're written. a quiet sense of progress, never a nag */
+  .ink { position: absolute; left: 1px; right: 1px; bottom: 0; height: 1px; background: var(--gold); transform-origin: left; transform: scaleX(var(--fill, 0)); transition: transform var(--d-fast) var(--ease); pointer-events: none; border-radius: 0 0 var(--r-control) var(--r-control); }
   .c-row { display: flex; align-items: center; justify-content: space-between; gap: var(--s-4); flex-wrap: wrap; }
-  .who { display: inline-flex; gap: var(--s-4); border: 0; padding: 0; font-size: var(--t-sm); }
-  .who label { display: inline-flex; align-items: center; gap: var(--s-2); min-height: 44px; cursor: pointer; color: var(--ink-muted); }
-  .who label:has(input:checked) { color: var(--ink); }
-  .meter { display: inline-flex; align-items: center; gap: var(--s-2); font-size: var(--t-xs); color: var(--ink-faint); font-variant-numeric: tabular-nums; }
+  .who { display: inline-flex; gap: var(--s-5); border: 0; padding: 0; font-size: var(--t-sm); font-weight: 300; }
+  .who label { display: inline-flex; align-items: center; gap: var(--s-2); min-height: 44px; cursor: pointer; color: rgb(243 244 246 / 0.45); transition: color var(--d-fast) var(--ease); }
+  .who label:hover, .who label:has(input:checked) { color: var(--ink); }
+  .meter { display: inline-flex; align-items: center; gap: var(--s-2); font-size: var(--t-xs); color: var(--ink-4); font-variant-numeric: tabular-nums; }
   .meter svg { transform: rotate(-90deg); }
-  .meter .track { fill: none; stroke: var(--line); stroke-width: 3; }
-  .meter .fill { fill: none; stroke: var(--gold); stroke-width: 3; stroke-linecap: round; stroke-dasharray: 100; stroke-dashoffset: calc(100 - var(--pct, 0)); transition: stroke-dashoffset var(--d-fast) var(--ease-out), stroke var(--d-base) var(--ease-out); }
-  .meter.warn .fill { stroke: oklch(0.78 0.13 65); }
+  .meter .track { fill: none; stroke: var(--hairline-strong); stroke-width: 2; }
+  .meter .fill { fill: none; stroke: var(--ink-3); stroke-width: 2; stroke-dasharray: 100; stroke-dashoffset: calc(100 - var(--pct, 0)); transition: stroke-dashoffset var(--d-fast) var(--ease), stroke var(--d-base) var(--ease); }
+  .meter.warn .fill { stroke: var(--gold); }
   .meter.over .fill { stroke: var(--danger); }
-  .named { display: grid; gap: var(--s-2); animation: rise var(--d-base) var(--ease-emph) both; }
-  .small, .c-list :global(.small) { font-size: var(--t-xs); }
-  .c-list :global(.linkish:hover) { color: var(--gold-bright); }
-  .c-list :global(.linkish:disabled) { opacity: 0.5; }
+  .named { display: grid; gap: var(--s-2); animation: arrive var(--d-base) var(--ease) both; }
+  .note { font-size: var(--t-xs); font-weight: 300; color: var(--ink-4); line-height: 1.55; }
   .c-actions { display: flex; align-items: center; justify-content: space-between; gap: var(--s-4); flex-wrap: wrap; }
-  .status { min-height: 1.2em; color: var(--ink-muted); }
+  .status { min-height: 1.3em; font-size: var(--t-sm); font-weight: 300; color: var(--ink-3); }
   .status.err { color: var(--danger); }
   .status.ok { color: var(--ok); }
-  .c-list :global(.linkish), .linkish { background: none; border: 0; padding: 0; color: var(--gold); text-decoration: underline; text-underline-offset: 0.2em; font-size: inherit; }
+  .linkish, .c-list :global(.linkish) { background: none; border: 0; padding: 0; color: rgb(243 244 246 / 0.45); text-decoration: underline; text-decoration-color: var(--hairline-strong); text-underline-offset: 0.2em; font-size: var(--t-xs); transition: color var(--d-fast) var(--ease); }
+  .linkish:hover, .c-list :global(.linkish:hover) { color: var(--ink); }
+  .c-list :global(.linkish:disabled) { opacity: 0.5; }
   .tag-preview { font-family: var(--font-mono); color: var(--gold); }
-  [data-submit][aria-busy="true"] { position: relative; color: transparent; }
-  [data-submit][aria-busy="true"]::after { content: ""; position: absolute; width: 16px; height: 16px; border-radius: 50%; border: 2px solid oklch(0.18 0.03 60 / 0.3); border-top-color: oklch(0.18 0.03 60); animation: spin 0.7s linear infinite; }
-  @keyframes spin { to { transform: rotate(360deg); } }
+  [data-submit][aria-busy="true"] { color: transparent; position: relative; }
+  [data-submit][aria-busy="true"]::after { content: "sealing"; position: absolute; color: var(--gold-ink); }
 </style>

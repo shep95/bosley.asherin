@@ -61,7 +61,7 @@ export function initComments(): void {
   const mine = load<Record<string, string>>("mine", {}); // comment id → delete token
 
   let total = 0;
-  const say = (msg: string, kind: "" | "ok" | "err" = "") => { status.textContent = msg; status.className = `status small ${kind}`; };
+  const say = (msg: string, kind: "" | "ok" | "err" = "") => { status.textContent = msg; status.className = `status ${kind}`; };
   const setCount = (n: number) => { total = n; count.textContent = n === 0 ? "" : n === 1 ? "1 voice" : `${n} voices`; empty.hidden = n > 0; };
 
   function render(c: PublicComment, fresh = false): HTMLLIElement {
@@ -94,7 +94,7 @@ export function initComments(): void {
     if (token) {
       const rm = document.createElement("button");
       rm.type = "button";
-      rm.className = "linkish c-remove small";
+      rm.className = "linkish c-remove";
       rm.textContent = "remove what i said";
       rm.addEventListener("click", () => remove(c.id, token, li, rm));
       li.append(rm);
@@ -166,7 +166,7 @@ export function initComments(): void {
   if (savedName) { nameInput.value = savedName; whoRadios.find((r) => r.value === "named")!.checked = true; named.hidden = false; }
   const refreshTag = async () => {
     const stored = load<{ pub: JsonWebKey } | null>("identity", null);
-    tagPreview.textContent = stored ? `(yours: ◆ ${await keyTag(stored.pub)})` : "";
+    tagPreview.textContent = stored ? ` (yours: ◆ ${await keyTag(stored.pub)})` : "";
   };
   refreshTag();
   for (const r of whoRadios) r.addEventListener("change", () => { named.hidden = r.value !== "named" || !r.checked; if (!named.hidden) nameInput.focus(); });
@@ -207,7 +207,9 @@ export function initComments(): void {
       const data = (await res.json().catch(() => ({}))) as { comment?: PublicComment; deleteToken?: string; error?: string };
       if (!res.ok || !data.comment) throw new Error(data.error ?? "something went wrong. try again.");
       if (data.deleteToken) { mine[data.comment.id] = data.deleteToken; save("mine", mine); }
-      list.append(render(data.comment, true));
+      const li = render(data.comment, true);
+      list.append(li);
+      requestAnimationFrame(() => requestAnimationFrame(() => li.classList.add("settled")));
       setCount(total + 1);
       text.value = ""; onInput();
       say("it's here. thank you for saying something.", "ok");

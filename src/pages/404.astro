@@ -2,14 +2,13 @@
 import Base from "../layouts/Base.astro";
 ---
 <Base path="/404" title="not here" description="this page doesn't exist." noindex>
-  <section class="prose-col lost">
+  <section class="wrap lost">
     <p class="eyebrow reveal">404</p>
-    <h1 class="display reveal" data-i="1">this corner of the room is empty.</h1>
-    <p class="muted reveal" data-i="2">the page may have moved, or it was never here.</p>
-    <p class="reveal" data-i="3"><a class="btn btn--gold" href="/">back to the writing</a></p>
+    <h1 class="hero-line reveal" data-i="1">this corner<br /><em>is empty.</em></h1>
+    <p class="lede reveal" data-i="2">the page moved, or it was never here.</p>
+    <p class="reveal" data-i="3"><a class="btn" href="/">back to the writing</a></p>
   </section>
 </Base>
 <style>
-  .lost { padding-block: var(--s-9); display: grid; gap: var(--s-4); }
-  h1 { font-size: var(--t-2xl); }
+  .lost { padding: clamp(var(--s-8), 12vw, 10rem) 0 var(--s-8); display: grid; gap: var(--s-6); justify-items: start; }
 </style>

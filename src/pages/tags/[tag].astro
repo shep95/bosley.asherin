@@ -12,13 +12,13 @@ const { tag, posts } = Astro.props;
 ---
 <Base path={`/tags/${tag}`} title={`#${tag}`} description={`writing on bosley about ${tag}.`}>
   <section class="wrap page">
-    <p class="eyebrow reveal"><a href="/tags">topics</a> /</p>
-    <h1 class="display reveal" data-i="1">#{tag}</h1>
-    <ol class="list">{posts.map((post, i) => <li><PostCard post={post} index={i + 1} /></li>)}</ol>
+    <p class="eyebrow reveal"><a class="quiet" href="/tags">topics</a> / {posts.length} {posts.length === 1 ? "post" : "posts"}</p>
+    <h1 class="serif reveal" data-i="1">#{tag}</h1>
+    <ol class="list">{posts.map((post, i) => <li><PostCard post={post} index={i + 2} /></li>)}</ol>
   </section>
 </Base>
 <style>
-  .page { padding-top: var(--s-8); }
-  h1 { font-size: var(--t-3xl); margin: var(--s-2) 0 var(--s-6); color: var(--gold); }
-  .list { list-style: none; padding: 0; display: grid; gap: var(--s-4); }
+  .page { padding-top: clamp(var(--s-8), 10vw, 9rem); }
+  h1 { font-size: var(--t-hero); line-height: 0.95; margin: var(--s-5) 0 var(--s-7); color: var(--ink); }
+  .list { list-style: none; padding: 0; border-bottom: 1px solid var(--hairline); }
 </style>

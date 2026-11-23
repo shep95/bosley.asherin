@@ -4,21 +4,26 @@ import { allTags, getPosts } from "../../lib/posts";
 const tags = allTags(await getPosts());
 ---
 <Base path="/tags" title="topics" description="every topic written about on bosley.">
-  <section class="prose-col page">
+  <section class="wrap page">
     <p class="eyebrow reveal">topics</p>
-    <h1 class="display reveal" data-i="1">what the writing is about.</h1>
+    <h1 class="serif reveal" data-i="1">what the writing is about.</h1>
     {tags.length === 0 ? (
-      <p class="muted reveal" data-i="2">no topics yet — they arrive with the first posts.</p>
+      <p class="meta none reveal" data-i="2">no topics yet. they arrive with the first posts.</p>
     ) : (
-      <ul class="cloud reveal" data-i="2">
-        {tags.map(({ tag, count }) => <li><a class="chip" href={`/tags/${tag}`}>#{tag} <span class="faint">{count}</span></a></li>)}
+      <ul class="list reveal" data-i="2">
+        {tags.map(({ tag, count }) => (
+          <li><a href={`/tags/${tag}`}><span class="serif name">#{tag}</span><span class="meta">{count} {count === 1 ? "post" : "posts"}</span></a></li>
+        ))}
       </ul>
     )}
   </section>
 </Base>
 <style>
-  .page { padding-top: var(--s-8); }
-  h1 { font-size: var(--t-2xl); margin: var(--s-3) 0 var(--s-6); }
-  .cloud { display: flex; flex-wrap: wrap; gap: var(--s-2); list-style: none; padding: 0; }
-  .cloud .chip { font-size: var(--t-sm); padding: 0.35rem 0.9rem; }
+  .page { padding-top: clamp(var(--s-8), 10vw, 9rem); }
+  h1 { font-size: clamp(2.4rem, 5vw, 3.75rem); line-height: 1.02; margin: var(--s-5) 0 var(--s-7); color: var(--ink); }
+  .none { border-top: 1px solid var(--hairline); padding-top: var(--s-5); }
+  .list { list-style: none; padding: 0; border-bottom: 1px solid var(--hairline); }
+  .list a { display: flex; align-items: baseline; justify-content: space-between; gap: var(--s-4); border-top: 1px solid var(--hairline); padding: var(--s-4) 0; }
+  .name { font-size: var(--t-lg); color: var(--ink-2); transition: color var(--d-fast) var(--ease); }
+  .list a:hover .name { color: var(--ink); }
 </style>

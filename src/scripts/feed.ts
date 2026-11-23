@@ -15,7 +15,7 @@ export function initFeed(): void {
     const affinity = load<Affinity>("affinity", {});
     const read = new Set(load<string[]>("read", []));
     const items = original.map((li) => {
-      const card = li.querySelector<HTMLElement>(".card")!;
+      const card = li.querySelector<HTMLElement>(".row")!;
       return { li, card, slug: card.dataset["slug"] ?? "", tags: (card.dataset["tags"] ?? "").split(" ").filter(Boolean), date: Date.parse(card.dataset["date"] ?? "") };
     });
     const ordered = mode === "foryou" ? forYou(items, affinity, read) : items;

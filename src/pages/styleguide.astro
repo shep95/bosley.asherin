@@ -1,60 +1,55 @@
 ---
 import Base from "../layouts/Base.astro";
 const swatches = [
-  ["bg", "--bg"], ["surface", "--surface"], ["raised", "--surface-raised"], ["line", "--line"],
-  ["ink", "--ink"], ["ink-muted", "--ink-muted"], ["ink-faint", "--ink-faint"],
-  ["gold-deep", "--gold-deep"], ["gold", "--gold"], ["gold-bright", "--gold-bright"],
+  ["bg", "#060709"], ["scrim", "rgb 9 10 12 / .78"], ["hairline", "white / .07"], ["hairline-strong", "white / .14"],
+  ["ink", "#f3f4f6"], ["ink-2", "ink / .78"], ["ink-3", "ink / .58"], ["ink-4", "ink / .45"], ["gold", "#e7be5f"],
 ];
-const scale = [["3xl", "a quiet room"], ["2xl", "the conversation"], ["xl", "a post title"], ["lg", "a pull quote"], ["md", "a lede sentence"], ["base", "body text for long reading"], ["sm", "meta and controls"], ["xs", "eyebrows and tags"]];
 ---
-<Base path="/styleguide" title="styleguide" description="bosley design tokens and components." noindex>
+<Base path="/styleguide" title="styleguide" description="bosley tokens and components." noindex>
   <section class="wrap sg">
-    <p class="eyebrow">design system</p>
-    <h1 class="display">calm. moody. golden brown.</h1>
+    <p class="eyebrow">the room</p>
+    <h1 class="hero-line">flat, quiet,<br /><em>one signal.</em></h1>
 
     <h2 class="eyebrow">color</h2>
-    <ul class="sw">{swatches.map(([n, v]) => <li><span class={`chipc c-${n}`}></span><code>{v}</code></li>)}</ul>
+    <ul class="sw">{swatches.map(([n, v]) => <li><span class={`chipc c-${n}`}></span><span class="meta">{n}</span><span class="meta">{v}</span></li>)}</ul>
 
     <h2 class="eyebrow">type</h2>
-    <div class="scale">{scale.map(([k, s]) => <p class={`t-${k} ${k === "3xl" || k === "2xl" || k === "xl" || k === "lg" ? "display" : ""}`}><span class="faint">{k}</span> {s}</p>)}</div>
+    <p class="hero-line">hero <em>line</em></p>
+    <p class="serif t1">a post title, in serif</p>
+    <p class="lede">a lede sentence, light and quiet.</p>
+    <p>body text for reading, at seventy-eight percent ivory.</p>
+    <p class="meta">meta · november 23, 2026 · 4 min read</p>
 
     <h2 class="eyebrow">controls</h2>
     <div class="row">
-      <button class="btn btn--gold" type="button">post</button>
+      <button class="btn btn--signal" type="button">post</button>
       <button class="btn" type="button">secondary</button>
-      <button class="btn btn--ghost" type="button">ghost</button>
       <button class="btn" type="button" disabled>disabled</button>
-      <a class="chip" href="#">#topic</a>
+      <a class="quiet tab" href="#" aria-current="page">tab, current</a>
+      <a class="quiet tab" href="#">tab</a>
     </div>
     <div class="row"><input class="field" placeholder="a field" /></div>
-    <div class="row"><textarea class="field" placeholder="say something"></textarea></div>
 
     <h2 class="eyebrow">motion</h2>
     <dl class="motion">
-      <dt>instant · 80ms</dt><dd>key echo, press</dd>
-      <dt>fast · 150ms</dt><dd>hover, chips, ink line</dd>
-      <dt>base · 240ms</dt><dd>cards, toggles, sheets</dd>
-      <dt>slow · 400ms</dt><dd>page transitions, reveal</dd>
-      <dt>hero · 700ms</dt><dd>first impression, once</dd>
+      <dt>fast · 120ms</dt><dd>hover, press, the ink line</dd>
+      <dt>base · 200ms</dt><dd>tabs, toggles, header</dd>
+      <dt>slow · 380ms</dt><dd>arrival, page transitions</dd>
+      <dt>easing</dt><dd>cubic-bezier(0.22, 1, 0.36, 1): hard deceleration, no bounce, no loops</dd>
     </dl>
   </section>
 </Base>
 <style>
   .sg { padding-block: var(--s-8); display: grid; gap: var(--s-5); }
-  h1 { font-size: var(--t-3xl); }
-  h2 { margin-top: var(--s-6); }
-  .sw { display: grid; grid-template-columns: repeat(auto-fill, minmax(9rem, 1fr)); gap: var(--s-3); list-style: none; padding: 0; }
-  .sw li { display: grid; gap: var(--s-2); font-size: var(--t-xs); color: var(--ink-faint); }
-  .chipc { height: 4.5rem; border-radius: var(--radius); border: 1px solid var(--line-soft); }
-  .c-bg { background: var(--bg); } .c-surface { background: var(--surface); } .c-raised { background: var(--surface-raised); } .c-line { background: var(--line); }
-  .c-ink { background: var(--ink); } .c-ink-muted { background: var(--ink-muted); } .c-ink-faint { background: var(--ink-faint); }
-  .c-gold-deep { background: var(--gold-deep); } .c-gold { background: var(--gold); } .c-gold-bright { background: var(--gold-bright); }
-  .scale { display: grid; gap: var(--s-2); }
-  .scale span { font-family: var(--font-mono); font-size: var(--t-xs); margin-right: var(--s-3); }
-  .t-3xl { font-size: var(--t-3xl); } .t-2xl { font-size: var(--t-2xl); } .t-xl { font-size: var(--t-xl); } .t-lg { font-size: var(--t-lg); }
-  .t-md { font-size: var(--t-md); } .t-base { font-size: var(--t-base); } .t-sm { font-size: var(--t-sm); } .t-xs { font-size: var(--t-xs); }
-  .row { display: flex; flex-wrap: wrap; gap: var(--s-3); align-items: center; max-width: 40rem; }
-  .motion { display: grid; grid-template-columns: max-content 1fr; gap: var(--s-2) var(--s-5); font-size: var(--t-sm); }
-  .motion dt { color: var(--gold); font-family: var(--font-mono); }
-  .motion dd { color: var(--ink-muted); }
+  h2 { margin-top: var(--s-6); border-top: 1px solid var(--hairline); padding-top: var(--s-3); }
+  .sw { display: grid; grid-template-columns: repeat(auto-fill, minmax(8rem, 1fr)); gap: var(--s-4); list-style: none; padding: 0; }
+  .sw li { display: grid; gap: var(--s-1); }
+  .chipc { height: 3.5rem; border-radius: var(--r-control); border: 1px solid var(--hairline-strong); }
+  .c-bg { background: var(--bg); } .c-scrim { background: var(--scrim); } .c-hairline { background: var(--hairline); } .c-hairline-strong { background: var(--hairline-strong); }
+  .c-ink { background: var(--ink); } .c-ink-2 { background: var(--ink-2); } .c-ink-3 { background: var(--ink-3); } .c-ink-4 { background: var(--ink-4); } .c-gold { background: var(--gold); }
+  .t1 { font-size: var(--t-lg); }
+  .row { display: flex; flex-wrap: wrap; gap: var(--s-5); align-items: center; max-width: 40rem; }
+  .motion { display: grid; grid-template-columns: max-content 1fr; gap: var(--s-2) var(--s-6); font-size: var(--t-sm); }
+  .motion dt { color: var(--ink); }
+  .motion dd { color: var(--ink-3); font-weight: 300; }
 </style>

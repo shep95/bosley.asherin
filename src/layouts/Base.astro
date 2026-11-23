@@ -1,8 +1,10 @@
 ---
 import "../styles/global.css";
+import { Image } from "astro:assets";
 import Seo, { type SeoProps } from "../components/Seo.astro";
 import Header from "../components/Header.astro";
 import Footer from "../components/Footer.astro";
+import wallpaper from "../assets/wallpaper.webp";
 
 type Props = SeoProps & { bodyClass?: string };
 const { bodyClass, ...seo } = Astro.props;
@@ -13,7 +15,7 @@ const { bodyClass, ...seo } = Astro.props;
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <meta name="color-scheme" content="dark" />
-    <meta name="theme-color" content="#120e0b" />
+    <meta name="theme-color" content="#060709" />
     <meta name="referrer" content="no-referrer" />
     <meta name="format-detection" content="telephone=no" />
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
@@ -24,6 +26,8 @@ const { bodyClass, ...seo } = Astro.props;
     <slot name="head" />
   </head>
   <body class={bodyClass}>
+    <Image class="wallpaper" src={wallpaper} alt="" aria-hidden="true" widths={[960, 1672]} sizes="100vw" loading="eager" fetchpriority="high" decoding="async" />
+    <div class="veil" aria-hidden="true"></div>
     <a class="skip-link" href="#main">skip to content</a>
     <Header />
     <main id="main" tabindex="-1">
