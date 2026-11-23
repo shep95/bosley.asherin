@@ -39,10 +39,10 @@
   --ink-4: rgb(243 244 246 / 0.45);     /* meta, eyebrows */
 
   /* the signal: champagne gold, flat */
-  --gold: #e7be5f;
-  --gold-hi: #f1ce7e;
+  --gold: #d5b27a;
+  --gold-hi: #cba670;                   /* hover: one flat step deeper, never lighter or shifting */
   --gold-ink: #17110a;                  /* words on gold */
-  --gold-line: rgb(231 190 95 / 0.55);
+  --gold-line: rgb(213 178 122 / 0.55);
 
   --danger: #e08a7a;
   --ok: #a9c7a0;
@@ -119,7 +119,7 @@ p, li { text-wrap: pretty; overflow-wrap: break-word; }
 ::-webkit-scrollbar-thumb:hover { background: var(--gold-line); }
 ::-webkit-scrollbar-corner { background: transparent; }
 
-::selection { background: rgb(231 190 95 / 0.3); color: var(--ink); }
+::selection { background: rgb(213 178 122 / 0.3); color: var(--ink); }
 :root { accent-color: var(--gold); caret-color: var(--gold); }
 :focus-visible { outline: 1px solid var(--gold); outline-offset: 3px; border-radius: 2px; }
 
