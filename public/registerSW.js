@@ -1,0 +1,1 @@
+/* the old app loaded this to register its service worker. it now does nothing. */
