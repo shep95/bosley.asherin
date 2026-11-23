@@ -5,7 +5,7 @@ no accounts, no ads, no tracking, no database.
 
 - **site:** [Astro](https://astro.build) 7, static html for every page, zero javascript you didn't write
 - **comments:** two small vercel functions (`/api/challenge`, `/api/comments`); each comment is one json file in vercel blob (object storage, not a database)
-- **hosting:** vercel, with an edge guard (`src/middleware.ts`) in front of every request
+- **hosting:** vercel; pages come from the cdn, and an edge guard (`src/middleware.ts`) sits in front of the comment api
 - **look:** calm, moody, golden brown. every value is a token in `src/styles/global.css`; see `/styleguide`
 
 ## write a post
@@ -97,9 +97,10 @@ without `POW_SECRET` or a blob store, the site still works and the conversation 
 
 - csp: `default-src 'self'` with no inline scripts or styles, `require-trusted-types-for 'script'`,
   `frame-ancestors 'none'`, plus hsts, coop/coep/corp and a deny-all permissions policy (`vercel.json`)
-- `src/middleware.ts` runs at the edge on every request: blocks scrapers, ai-training crawlers and
-  scanners, refuses methods other than get/head (except writes to the comment api), and answers
-  410 for routes of the old app
+- `src/middleware.ts` runs at the edge in front of the comment api: blocks scrapers, ai-training
+  crawlers and scanners, and refuses methods other than get/head except writes to `/api/comments`.
+  static pages are served by the cdn directly (they hold nothing private); routes of the old app
+  now answer 404
 - writes are same-origin only; bodies are capped at 8 kb
 - see `SECURITY.md` for scope and reporting
 

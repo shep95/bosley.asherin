@@ -13,7 +13,7 @@ export default defineConfig({
   adapter: vercel({
     // no analytics, no speed insights: nothing third-party runs in a visitor's browser.
     webAnalytics: { enabled: false },
-    // src/middleware.ts runs at the edge in front of every request, static files included.
+    // src/middleware.ts runs at the edge in front of the comment api.
     middlewareMode: "edge",
     imageService: false,
   }),

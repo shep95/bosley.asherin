@@ -1,7 +1,7 @@
 /**
- * edge middleware — astro deploys this as vercel edge middleware
- * (adapter middlewareMode: "edge"), so it runs before every request,
- * static pages included.
+ * edge middleware — astro deploys this as a vercel edge function in front of
+ * every on-demand route (the comment api). static pages are served straight
+ * from vercel's cdn and never reach it; they hold nothing private.
  *
  * Purpose: stop link/content scrapers and abusive automation at the edge,
  * before they reach a page or the comment api.
