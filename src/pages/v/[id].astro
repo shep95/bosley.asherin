@@ -1,0 +1,90 @@
+---
+import Base from "../../layouts/Base.astro";
+import Comments from "../../components/Comments.astro";
+import { postStore } from "../../lib/server/env";
+import { idOf, type StoredPost } from "../../lib/server/visitor-posts";
+import { VISITOR_KEY } from "../../lib/validate";
+import { formatDate } from "../../lib/posts";
+
+/** a visitor's post. rendered on request from its blob file, as plain text only. */
+export const prerender = false;
+
+const key = Astro.params.id ?? "";
+let post: StoredPost | null = null;
+let resting = false;
+if (VISITOR_KEY.test(key)) {
+  const store = postStore();
+  if (!store) resting = true;
+  else {
+    try { post = await store.read(idOf(key)); } catch { resting = true; }
+  }
+}
+if (!post) {
+  Astro.response.status = resting ? 503 : 404;
+  Astro.response.headers.set("cache-control", "no-store");
+} else {
+  Astro.response.headers.set("cache-control", "public, max-age=0, s-maxage=30, stale-while-revalidate=300");
+}
+// a blank line is a paragraph; single newlines stay as written
+const paragraphs = post ? post.text.split(/\n{2,}/).map((p) => p.trim()).filter(Boolean) : [];
+const date = post ? new Date(post.at) : null;
+const mins = post ? Math.max(1, Math.round(post.text.split(/\s+/).filter(Boolean).length / 230)) : 0;
+const description = post ? (post.text.replace(/\s+/g, " ").slice(0, 150) + (post.text.length > 150 ? "…" : "")) : "";
+---
+{post && date ? (
+  <Base path={`/v/${key}`} title={post.title} description={description} type="article" noindex bodyClass="reading">
+    <article class="post" data-visitor={post.id}>
+      <header class="col head">
+        <p class="eyebrow reveal"><a class="quiet" href="/">writing</a> · <time datetime={date.toISOString()}>{formatDate(date)}</time> · {mins} min read</p>
+        <h1 class="serif title reveal" data-i="1">{post.title}</h1>
+        <p class="by reveal" data-i="2">
+          {post.name ? <span class="by-name">{post.name}</span> : <span class="by-anon">anonymous</span>}
+          {post.tag && <span class="by-tag" title="signed with this person's own key — the same mark appears on everything they sign">◆ {post.tag}</span>}
+          <span class="by-note meta">a visitor's post</span>
+        </p>
+      </header>
+      <div class="prose col reveal" data-i="3">
+        {paragraphs.map((p) => <p>{p}</p>)}
+      </div>
+      <footer class="col end">
+        <button class="quiet share" type="button" data-share data-url={new URL(`/v/${key}`, Astro.url).href} data-title={post.title}><span data-share-label>copy link</span></button>
+        <button class="quiet remove" type="button" data-remove-post={post.id} hidden>remove my post</button>
+      </footer>
+      <p class="col status meta" data-remove-status role="status" aria-live="polite"></p>
+    </article>
+    <Comments post={key} />
+  </Base>
+) : (
+  <Base path={`/v/${key}`} title={resting ? "resting" : "not here"} noindex>
+    <section class="col gone">
+      <p class="eyebrow reveal">{resting ? "503" : "404"}</p>
+      <h1 class="serif reveal" data-i="1">{resting ? "writing is resting for a moment." : "this post isn't here."}</h1>
+      <p class="lede reveal" data-i="2">{resting ? "try again in a little while." : "its writer may have removed it. removal on bosley means gone."}</p>
+      <p class="reveal" data-i="3"><a class="link" href="/">back to the writing</a></p>
+    </section>
+  </Base>
+)}
+
+<script>
+  import { initVisitorPost } from "../../scripts/visitor-post";
+  initVisitorPost();
+</script>
+
+<style>
+  .head { padding-top: clamp(var(--s-7), 9vw, var(--s-9)); }
+  .title { margin-top: var(--s-5); font-size: clamp(2.4rem, 6vw, 4rem); line-height: 1; color: var(--ink); overflow-wrap: anywhere; }
+  .by { display: flex; align-items: baseline; flex-wrap: wrap; gap: var(--s-3); margin-top: var(--s-5); padding-bottom: var(--s-6); border-bottom: 1px solid var(--hairline); }
+  .by-name { font-size: var(--t-sm); font-weight: 500; color: var(--ink); }
+  .by-anon { font-family: var(--font-display); font-style: italic; font-size: var(--t-md); line-height: 1; color: var(--ink-3); }
+  .by-tag { font-family: var(--font-mono); font-size: var(--t-xs); color: var(--gold); }
+  .by-note { margin-left: auto; }
+  .prose { padding-top: var(--s-6); display: grid; gap: 1.2em; }
+  .prose p { font-size: var(--t-base); line-height: 1.75; font-weight: 350; color: var(--ink-2); white-space: pre-line; overflow-wrap: anywhere; }
+  .end { display: flex; align-items: center; justify-content: space-between; gap: var(--s-4); margin-top: var(--s-8); padding-top: var(--s-5); border-top: 1px solid var(--hairline); }
+  .share, .remove { background: none; border: 0; padding: var(--s-2) 0; font-size: var(--t-sm); cursor: pointer; }
+  .share.is-done { color: var(--gold); }
+  .remove:hover { color: var(--danger); }
+  .status { min-height: 1.3em; padding-top: var(--s-3); }
+  .gone { padding: clamp(var(--s-8), 14vw, 10rem) 0; display: grid; gap: var(--s-4); }
+  .gone h1 { font-size: var(--t-xl); line-height: 1.05; color: var(--ink); }
+</style>

@@ -14,16 +14,28 @@ const CONTROL = /[\u0000-\u0008\u000B-\u001F\u007F-\u009F]/g;
 const BIDI = /[‪-‮⁦-⁩‎‏؜]/g;
 const ZERO_WIDTH = /[​-‍⁠﻿᠎]/g;
 
-export function cleanText(input: unknown): { ok: true; text: string } | { ok: false; error: string } {
+export function cleanText(input: unknown, max = MAX_TEXT, maxLinks = MAX_LINKS): { ok: true; text: string } | { ok: false; error: string } {
   if (typeof input !== "string") return { ok: false, error: "say something first." };
   let t = input.normalize("NFC").replace(/\r\n?/g, "\n").replace(CONTROL, "").replace(BIDI, "").replace(ZERO_WIDTH, "");
   t = t.replace(/[ \t]+\n/g, "\n").replace(/\n{3,}/g, "\n\n").trim();
   if (t.length < 2) return { ok: false, error: "say a little more." };
-  if (t.length > MAX_TEXT) return { ok: false, error: `keep it under ${MAX_TEXT} characters.` };
+  if (t.length > max) return { ok: false, error: `keep it under ${max.toLocaleString("en")} characters.` };
   const links = t.match(/\b(?:https?:\/\/|www\.)\S+/gi) ?? [];
-  if (links.length > MAX_LINKS) return { ok: false, error: `at most ${MAX_LINKS} links per comment.` };
+  if (links.length > maxLinks) return { ok: false, error: `at most ${maxLinks} links.` };
   if (/(.)\1{29,}/u.test(t)) return { ok: false, error: "that looks like a key held down." };
   return { ok: true, text: t };
+}
+
+export const MAX_POST = 5000;
+export const MAX_TITLE = 120;
+
+/** a visitor post's title: one line, no markup meaning, 3–120 characters. */
+export function cleanTitle(input: unknown): { ok: true; title: string } | { ok: false; error: string } {
+  if (typeof input !== "string") return { ok: false, error: "give it a title." };
+  const t = input.normalize("NFC").replace(CONTROL, "").replace(BIDI, "").replace(ZERO_WIDTH, "").replace(/\s+/g, " ").trim();
+  if (t.length < 3) return { ok: false, error: "give it a title of a few words." };
+  if (t.length > MAX_TITLE) return { ok: false, error: `titles are up to ${MAX_TITLE} characters.` };
+  return { ok: true, title: t };
 }
 
 export function cleanName(input: unknown): { ok: true; name: string | null } | { ok: false; error: string } {
@@ -39,3 +51,5 @@ export function cleanName(input: unknown): { ok: true; name: string | null } | {
 
 export const SLUG = /^[a-z0-9][a-z0-9-/]{0,118}[a-z0-9]$/;
 export const COMMENT_ID = /^[0-9A-HJKMNP-TV-Z]{26}$/;
+/** visitor posts live at /v/<id>; their conversation key is "v-<id, lower-case>". */
+export const VISITOR_KEY = /^v-[0-9a-hjkmnp-tv-z]{26}$/;

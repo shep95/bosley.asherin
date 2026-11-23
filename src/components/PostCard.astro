@@ -25,32 +25,37 @@ const mins = readingMinutes(post.body);
     </p>
   </div>
   {cover && (
-    <div class="cover">
+    <div class="row-cover">
       <Image src={cover} alt={coverAlt ?? ""} widths={[480, 800]} sizes="(min-width: 60rem) 16rem, 100vw" loading={index < 2 ? "eager" : "lazy"} />
     </div>
   )}
 </article>
-<style>
-  /* an editorial row on a hairline, not a box */
+<style is:global>
+  /* an editorial row on a hairline, not a box. global, because visitor posts
+     are drawn into the same list in the browser and must look identical. */
   .row {
     position: relative; display: grid; gap: var(--s-3) var(--s-6);
     grid-template-columns: 1fr; padding: var(--s-6) 0; border-top: 1px solid var(--hairline);
   }
   @media (min-width: 52rem) {
     .row { grid-template-columns: 9rem minmax(0, 5fr) minmax(0, 6fr); align-items: start; }
-    .row:has(.cover) { grid-template-columns: 9rem minmax(0, 5fr) minmax(0, 4fr) 12rem; }
+    .row:has(.row-cover) { grid-template-columns: 9rem minmax(0, 5fr) minmax(0, 4fr) 12rem; }
   }
-  .hit { position: absolute; inset: 0; z-index: 1; }
-  .tag { position: relative; z-index: 2; }
-  .lead { display: flex; align-items: baseline; gap: var(--s-3); }
-  @media (min-width: 52rem) { .lead { flex-direction: column; gap: var(--s-1); } }
-  .n { font-size: 1.6rem; line-height: 1; color: rgb(243 244 246 / 0.3); }
-  .title { font-size: var(--t-lg); line-height: 1.08; color: var(--ink); transition: color var(--d-fast) var(--ease); }
+  .row .hit { position: absolute; inset: 0; z-index: 1; }
+  .row .tag { position: relative; z-index: 2; }
+  .row .lead { display: flex; align-items: baseline; gap: var(--s-3); }
+  @media (min-width: 52rem) { .row .lead { flex-direction: column; gap: var(--s-1); } }
+  .row .n { font-size: 1.6rem; line-height: 1; color: rgb(243 244 246 / 0.3); }
+  .row .by-anon { font-family: var(--font-display); font-style: italic; font-size: 1.15rem; line-height: 1; color: var(--ink-3); }
+  .row .by-name { font-size: var(--t-sm); font-weight: 500; color: var(--ink-2); overflow-wrap: anywhere; }
+  .row .title { font-size: var(--t-lg); line-height: 1.08; color: var(--ink); overflow-wrap: anywhere; transition: color var(--d-fast) var(--ease); }
   .row:hover .title { color: var(--gold-hi); }
-  .desc { font-weight: 300; color: var(--ink-3); line-height: 1.6; max-width: 46ch; }
-  .foot { margin-top: var(--s-2); }
-  .why { margin-top: var(--s-2); color: var(--gold); }
-  .cover { overflow: hidden; border-radius: var(--r-surface); aspect-ratio: 4 / 3; border: 1px solid var(--hairline); }
-  .cover :global(img) { width: 100%; height: 100%; object-fit: cover; opacity: 0.9; transition: opacity var(--d-base) var(--ease); }
-  .row:hover .cover :global(img) { opacity: 1; }
+  .row .desc { font-weight: 300; color: var(--ink-3); line-height: 1.6; max-width: 46ch; overflow-wrap: anywhere; }
+  .row .foot { margin-top: var(--s-2); }
+  .row .why { margin-top: var(--s-2); color: var(--gold); }
+  .row .mark { font-family: var(--font-mono); font-size: var(--t-xs); color: var(--gold); }
+  .row.is-arriving { animation: arrive var(--d-slow) var(--ease) both; }
+  .row-cover { overflow: hidden; border-radius: var(--r-surface); aspect-ratio: 4 / 3; border: 1px solid var(--hairline); }
+  .row-cover img { width: 100%; height: 100%; object-fit: cover; opacity: 0.9; transition: opacity var(--d-base) var(--ease); }
+  .row:hover .row-cover img { opacity: 1; }
 </style>

@@ -18,7 +18,7 @@
 import { defineMiddleware } from "astro:middleware";
 
 // static assets (content-hashed, harmless to fetch) skip the checks.
-const SKIP = /^\/(_astro\/|favicon|apple-touch-icon|icon-maskable|og-image|manifest|robots\.txt|sitemap|rss\.xml|llms\.txt|\.well-known\/|[0-9a-f]{32}\.txt)/;
+const SKIP = /^\/(_astro\/|favicon|apple-touch-icon|icon-maskable|og-image|manifest|robots\.txt|sitemap|llms\.txt|\.well-known\/|[0-9a-f]{32}\.txt)/;
 
 const BLOCKED_UA = [
   // AI training / LLM retrieval crawlers
@@ -55,7 +55,7 @@ const SCANNER_EXTENSIONS = /\.(php|asp|aspx|jsp|cgi|pl|sh|bak|old|orig|sql|sqlit
 // routes of the old app (accounts, dms, dashboards). they no longer exist: answer 410 gone
 // so search engines drop them quickly instead of retrying a 404.
 const RETIRED = /^\/(dashboard|explore|search|notifications|messages|bookmarks|lists|communities|events|drafts|templates|compose|calendar|profile|settings|sponsors|scheduled|analytics|user|post|reset-password|auth|login|signup|install|contact|terms)(\/.*)?$/;
-const WRITABLE = /^\/api\/comments$/;
+const WRITABLE = /^\/api\/(comments|posts)$/;
 
 function deny(status: number, reason: string): Response {
   return new Response(reason, {

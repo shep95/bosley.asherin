@@ -1,9 +1,9 @@
-import { solve } from "../lib/pow";
-import { forget, load, save } from "./local";
+import { load, save } from "./local";
 import { cleanName, cleanText } from "../lib/validate";
+import { forgetIdentity, myTag, sign, signedMessage } from "./identity";
+import { worker } from "./work";
 
 interface PublicComment { id: string; text: string; name: string | null; tag: string | null; at: string }
-interface Challenge { challenge: string; bits: number; expires: number }
 
 const MAX = 1000;
 const rtf = new Intl.RelativeTimeFormat("en", { numeric: "auto" });
@@ -19,28 +19,6 @@ function ago(iso: string): string {
   return "";
 }
 
-const b64url = (buf: ArrayBuffer) => btoa(String.fromCharCode(...new Uint8Array(buf))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
-
-/** the visitor's optional signing key — made and kept in this browser only. */
-async function identityKey(): Promise<{ pub: JsonWebKey; priv: CryptoKey } | null> {
-  if (!crypto?.subtle) return null;
-  let stored = load<{ pub: JsonWebKey; priv: JsonWebKey } | null>("identity", null);
-  if (!stored) {
-    const pair = await crypto.subtle.generateKey({ name: "ECDSA", namedCurve: "P-256" }, true, ["sign", "verify"]);
-    const pub = await crypto.subtle.exportKey("jwk", pair.publicKey);
-    const priv = await crypto.subtle.exportKey("jwk", pair.privateKey);
-    stored = { pub: { kty: "EC", crv: "P-256", x: pub.x!, y: pub.y! }, priv };
-    save("identity", stored);
-  }
-  const priv = await crypto.subtle.importKey("jwk", stored.priv, { name: "ECDSA", namedCurve: "P-256" }, false, ["sign"]);
-  return { pub: stored.pub, priv };
-}
-
-async function keyTag(pub: JsonWebKey): Promise<string> {
-  const d = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(`${pub.x}.${pub.y}`));
-  return [...new Uint8Array(d)].slice(0, 4).map((b) => b.toString(16).padStart(2, "0")).join("");
-}
-
 export function initComments(): void {
   const root = document.querySelector<HTMLElement>("[data-comments]");
   if (!root) return;
@@ -51,7 +29,6 @@ export function initComments(): void {
   const form = root.querySelector<HTMLFormElement>("[data-form]")!;
   const text = form.querySelector<HTMLTextAreaElement>("textarea")!;
   const ink = form.querySelector<HTMLElement>(".ink")!;
-  const meter = form.querySelector<HTMLElement>(".meter")!;
   const left = form.querySelector<HTMLElement>("[data-left]")!;
   const named = form.querySelector<HTMLElement>("[data-named]")!;
   const nameInput = form.querySelector<HTMLInputElement>("#c-name")!;
@@ -131,47 +108,39 @@ export function initComments(): void {
   // ── typing feel: the ink line and the ring follow every keystroke, at no cost to input ──
   const onInput = () => {
     const n = text.value.length;
-    const pct = Math.min(100, (n / MAX) * 100);
     ink.style.setProperty("--fill", String(Math.min(1, n / 280)));
-    meter.style.setProperty("--pct", String(pct));
-    meter.classList.toggle("warn", n > MAX * 0.9 && n <= MAX);
-    meter.classList.toggle("over", n > MAX);
-    left.textContent = n > MAX * 0.8 ? String(MAX - n) : "";
+    // the count appears only near the limit — never a nag while writing
+    left.textContent = n > MAX * 0.8 ? `${MAX - n} left` : "";
+    left.classList.toggle("warn", n > MAX * 0.8 && n <= MAX);
+    left.classList.toggle("over", n > MAX);
     if (status.classList.contains("err")) say("");
   };
   text.addEventListener("input", onInput, { passive: true });
 
   // ── proof-of-work starts quietly the moment someone begins to write ──
-  let work: Promise<{ challenge: string; nonce: string }> | null = null;
-  let abort: AbortController | null = null;
-  const startWork = () => {
-    if (work) return work;
-    abort = new AbortController();
-    const signal = abort.signal;
-    work = (async () => {
-      const res = await fetch(`/api/challenge?post=${encodeURIComponent(post)}`);
-      if (!res.ok) throw new Error(res.status === 503 ? "resting" : "challenge");
-      const ch = (await res.json()) as Challenge;
-      const nonce = await solve(ch.challenge, ch.bits, { signal });
-      return { challenge: ch.challenge, nonce };
-    })();
-    work.catch(() => { work = null; });
-    return work;
-  };
-  text.addEventListener("focus", () => { startWork().catch(() => {}); }, { once: false });
+  const work = worker(post);
+  text.addEventListener("focus", () => { work.start().catch(() => {}); });
 
-  // ── identity: anonymous by default ──
-  const whoRadios = [...form.querySelectorAll<HTMLInputElement>('input[name="who"]')];
-  const savedName = load<string>("name", "");
-  if (savedName) { nameInput.value = savedName; whoRadios.find((r) => r.value === "named")!.checked = true; named.hidden = false; }
-  const refreshTag = async () => {
-    const stored = load<{ pub: JsonWebKey } | null>("identity", null);
-    tagPreview.textContent = stored ? ` (yours: ◆ ${await keyTag(stored.pub)})` : "";
+  // ── identity: anonymous by default; a name is a choice, signed by a key ──
+  const whoLabel = form.querySelector<HTMLElement>("[data-who]")!;
+  const toggleName = form.querySelector<HTMLButtonElement>("[data-toggle-name]")!;
+  let isNamed = false;
+  const setNamed = async (on: boolean) => {
+    isNamed = on;
+    named.hidden = !on;
+    toggleName.textContent = on ? "stay anonymous" : "sign with a name";
+    const em = document.createElement("em");
+    em.textContent = on ? nameInput.value.trim() || "your name" : "anonymous";
+    whoLabel.replaceChildren("as ", em);
+    const t = on ? await myTag() : null;
+    tagPreview.textContent = t ? ` (yours: ◆ ${t})` : "";
   };
-  refreshTag();
-  for (const r of whoRadios) r.addEventListener("change", () => { named.hidden = r.value !== "named" || !r.checked; if (!named.hidden) nameInput.focus(); });
+  const savedName = load<string>("name", "");
+  if (savedName) { nameInput.value = savedName; void setNamed(true); }
+  toggleName.addEventListener("click", () => { void setNamed(!isNamed).then(() => { if (isNamed) nameInput.focus(); }); });
+  nameInput.addEventListener("input", () => { if (isNamed) void setNamed(true); }, { passive: true });
   form.querySelector("[data-forget-key]")?.addEventListener("click", () => {
-    forget("identity"); forget("name"); nameInput.value = ""; tagPreview.textContent = "";
+    forgetIdentity(); nameInput.value = ""; void setNamed(false);
     say("your key is forgotten. a new one is made next time you sign.", "ok");
   });
 
@@ -181,7 +150,6 @@ export function initComments(): void {
     const cleaned = cleanText(text.value);
     if (!cleaned.ok) { say(cleaned.error, "err"); text.focus(); return; }
     const value = cleaned.text;
-    const isNamed = whoRadios.find((r) => r.checked)?.value === "named";
     const nm = cleanName(isNamed ? nameInput.value : "");
     if (!nm.ok) { say(nm.error, "err"); nameInput.focus(); return; }
     const name = nm.name ?? "";
@@ -190,18 +158,14 @@ export function initComments(): void {
     submit.disabled = true; submit.setAttribute("aria-busy", "true");
     say("sealing it…");
     try {
-      const { challenge, nonce } = await startWork();
+      const { challenge, nonce } = await work.start();
       const payload: Record<string, unknown> = { post, text: value, challenge, nonce };
       if (isNamed) {
         payload["name"] = name;
-        const id = await identityKey();
-        if (id) {
-          const msg = `bosley-comment-v1\n${post}\n${name}\n${challenge}\n${value}`;
-          const sig = await crypto.subtle.sign({ name: "ECDSA", hash: "SHA-256" }, id.priv, new TextEncoder().encode(msg));
-          payload["pub"] = id.pub; payload["sig"] = b64url(sig);
-        }
+        const s = await sign(signedMessage(post, value, name, challenge));
+        if (s) { payload["pub"] = s.pub; payload["sig"] = s.sig; }
         save("name", name);
-        refreshTag();
+        void setNamed(true);
       }
       const res = await fetch("/api/comments", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(payload) });
       const data = (await res.json().catch(() => ({}))) as { comment?: PublicComment; deleteToken?: string; error?: string };
@@ -212,16 +176,17 @@ export function initComments(): void {
       requestAnimationFrame(() => requestAnimationFrame(() => li.classList.add("settled")));
       setCount(total + 1);
       text.value = ""; onInput();
+      ink.style.setProperty("--fill", "0");
       say("it's here. thank you for saying something.", "ok");
     } catch (err) {
       const msg = err instanceof Error ? err.message : "";
       say(msg === "resting" ? "the conversation is resting for a moment. try again soon." : msg && msg !== "challenge" ? msg : "couldn't send that. try again.", "err");
     } finally {
-      work = null; abort = null;
+      work.reset();
       submit.disabled = false; submit.removeAttribute("aria-busy");
     }
   });
 
-  window.addEventListener("pagehide", () => abort?.abort());
+  window.addEventListener("pagehide", () => work.cancel());
   void loadList();
 }
