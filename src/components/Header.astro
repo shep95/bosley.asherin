@@ -27,7 +27,9 @@ const on = (href: string) => (href === "/" ? here === "/" : here === href || her
   .site-header { position: sticky; top: 0; z-index: 20; border-bottom: 1px solid transparent; }
   /* the surface arrives only after content starts passing underneath — driven by scroll, no script */
   @supports (animation-timeline: scroll()) {
-    .site-header { animation: settle linear both; animation-timeline: scroll(); animation-range: 0 64px; }
+    .site-header { animation: settle linear both; }
+    /* separate rule on purpose: minifiers fold a timeline into the animation shorthand, which browsers reject */
+    .site-header.site-header { animation-timeline: scroll(); animation-range: 0 64px; }
     @keyframes settle { to { background: var(--scrim-solid); border-bottom-color: var(--hairline); } }
   }
   @supports not (animation-timeline: scroll()) {

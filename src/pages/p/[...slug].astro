@@ -95,7 +95,8 @@ const jsonLd = [
   /* reading progress: a 1px gold line along the top edge, driven by scroll */
   .progress { position: fixed; top: 0; left: 0; right: 0; height: 1px; z-index: 30; background: var(--gold); transform-origin: left; transform: scaleX(0); }
   @supports (animation-timeline: scroll()) {
-    .progress { animation: grow linear both; animation-timeline: scroll(root); }
+    .progress { animation: grow linear both; }
+    .progress.progress { animation-timeline: scroll(root); }
     @keyframes grow { to { transform: scaleX(1); } }
   }
   @supports not (animation-timeline: scroll()) { .progress { display: none; } }

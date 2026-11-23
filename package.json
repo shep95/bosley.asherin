@@ -3,13 +3,13 @@
   "private": true,
   "version": "2.0.0",
   "type": "module",
-  "description": "bosley \u2014 a quiet room on the internet. static-first blog with anonymous, text-only comments. no accounts, no database, no tracking.",
+  "description": "bosley — a quiet room on the internet. static-first blog with anonymous, text-only comments. no accounts, no database, no tracking.",
   "engines": {
     "node": ">=22"
   },
   "scripts": {
     "dev": "astro dev",
-    "build": "node scripts/scrub-images.mjs && astro build && node scripts/scrub-images.mjs --roots=dist/client,.vercel/output/static",
+    "build": "node scripts/scrub-images.mjs && astro build && node scripts/scrub-images.mjs --roots=dist/client,.vercel/output/static && node scripts/check-dist.mjs",
     "preview": "astro preview",
     "typecheck": "astro check",
     "test": "vitest run",

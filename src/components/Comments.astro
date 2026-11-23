@@ -21,6 +21,7 @@ const { post } = Astro.props;
         aria-describedby="c-hint c-status" autocomplete="off" spellcheck="true"></textarea>
       <span class="ink" aria-hidden="true"></span>
     </div>
+    <p id="c-status" class="status" data-status role="status" aria-live="polite"></p>
 
     <div class="c-row">
       <fieldset class="who">
@@ -47,7 +48,6 @@ const { post } = Astro.props;
       <p id="c-hint" class="note">text only · up to 1,000 characters · no account, no email</p>
       <button class="btn btn--signal" type="submit" data-submit>post</button>
     </div>
-    <p id="c-status" class="status" data-status role="status" aria-live="polite"></p>
   </form>
 </section>
 

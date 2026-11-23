@@ -3,7 +3,7 @@ import { load, save, type Affinity } from "./local";
 
 export function initFeed(): void {
   const list = document.querySelector<HTMLOListElement>("[data-feed]");
-  const toggle = document.querySelector<HTMLElement>(".toggle");
+  const toggle = document.querySelector<HTMLElement>(".tabs");
   if (!list || !toggle) return;
   const note = document.querySelector<HTMLElement>(".foryou-note");
   const original = [...list.children] as HTMLLIElement[];
