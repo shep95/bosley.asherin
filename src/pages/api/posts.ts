@@ -20,7 +20,7 @@ export const GET: APIRoute = async () => {
   if (!store) return resting();
   try {
     const posts = await store.latest(50);
-    return json({ posts: posts.map(toPublicPost) }, 200, { "cache-control": "public, max-age=0, s-maxage=10, stale-while-revalidate=60" });
+    return json({ posts: posts.map(toPublicPost) }, 200, { "cache-control": "no-store" });
   } catch {
     return resting();
   }
