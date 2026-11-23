@@ -21,12 +21,16 @@
   --bg: #060709;
   --veil: rgb(6 7 9 / 0.68);            /* flat, over the wallpaper */
   --veil-reading: rgb(6 7 9 / 0.84);    /* long-form pages: words before atmosphere */
-  --scrim: rgb(9 10 12 / 0.78);         /* reading surfaces */
-  --scrim-solid: rgb(9 10 12 / 0.94);   /* header once content passes under it */
+  --surface: rgb(11 12 14);             /* panels that must be opaque (composer) */
+  --scrim: rgb(11 12 14 / 0.78);        /* reading surfaces */
+  --scrim-solid: rgb(11 12 14 / 0.94);  /* the header pieces, the footer — same black as --surface */
+  --dim: rgb(6 7 9 / 0.78);             /* behind a modal: the page, dimmed in its own black */
   --field: rgb(4 5 6 / 0.7);
+  --tint: rgb(255 255 255 / 0.05);      /* resting fill for chips and hover */
 
   --hairline: rgb(255 255 255 / 0.07);
   --hairline-strong: rgb(255 255 255 / 0.14);
+  --hairline-hover: rgb(255 255 255 / 0.24);
 
   /* ivory at fixed opacities: the hierarchy is how much of the word is there */
   --ink: #f3f4f6;
@@ -35,10 +39,10 @@
   --ink-4: rgb(243 244 246 / 0.45);     /* meta, eyebrows */
 
   /* the signal: champagne gold, flat */
-  --gold: #e7be5f;
-  --gold-hi: #f1ce7e;
+  --gold: #d5b27a;
+  --gold-hi: #cba670;                   /* hover: one flat step deeper, never lighter or shifting */
   --gold-ink: #17110a;                  /* words on gold */
-  --gold-line: rgb(231 190 95 / 0.55);
+  --gold-line: rgb(213 178 122 / 0.55);
 
   --danger: #e08a7a;
   --ok: #a9c7a0;
@@ -62,8 +66,8 @@
   --page: 72rem;
   --gutter: clamp(1.25rem, 4vw, 2rem);
 
-  --r-control: 6px;   /* buttons, fields */
-  --r-surface: 10px;  /* images, panels */
+  --r-control: 8px;   /* buttons, fields, chips, pills — every control */
+  --r-surface: 12px;  /* panels, header pieces, images */
 
   --ease: cubic-bezier(0.22, 1, 0.36, 1);
   --d-fast: 120ms;
@@ -80,7 +84,7 @@ html {
   background: var(--bg);
   scroll-padding-top: 5rem;
   scrollbar-width: thin;
-  scrollbar-color: rgb(255 255 255 / 0.16) transparent;
+  scrollbar-color: var(--hairline-strong) transparent;
 }
 body {
   min-height: 100dvh;
@@ -111,11 +115,11 @@ p, li { text-wrap: pretty; overflow-wrap: break-word; }
 /* scrollbars: a hairline thumb that firms up under the hand */
 ::-webkit-scrollbar { width: 8px; height: 8px; }
 ::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: rgb(255 255 255 / 0.16); border-radius: 4px; }
+::-webkit-scrollbar-thumb { background: var(--hairline-strong); border-radius: var(--r-control); }
 ::-webkit-scrollbar-thumb:hover { background: var(--gold-line); }
 ::-webkit-scrollbar-corner { background: transparent; }
 
-::selection { background: rgb(231 190 95 / 0.3); color: var(--ink); }
+::selection { background: rgb(213 178 122 / 0.3); color: var(--ink); }
 :root { accent-color: var(--gold); caret-color: var(--gold); }
 :focus-visible { outline: 1px solid var(--gold); outline-offset: 3px; border-radius: 2px; }
 
@@ -135,7 +139,7 @@ p, li { text-wrap: pretty; overflow-wrap: break-word; }
 
 /* type roles */
 .hero-line { font-weight: 200; font-size: var(--t-hero); line-height: 0.92; letter-spacing: -0.045em; color: var(--ink); }
-.hero-line em { font-family: var(--font-display); font-style: italic; font-weight: 400; letter-spacing: -0.02em; font-size: 1.08em; color: rgb(243 244 246 / 0.85); }
+.hero-line em { font-family: var(--font-display); font-style: italic; font-weight: 400; letter-spacing: -0.02em; font-size: 1.08em; color: var(--ink-2); }
 .serif { font-family: var(--font-display); font-weight: 400; letter-spacing: -0.012em; font-feature-settings: "liga", "kern"; }
 .eyebrow { font-size: var(--t-xs); font-weight: 450; letter-spacing: 0.16em; text-transform: uppercase; color: var(--ink-4); }
 .lede { font-size: var(--t-md); font-weight: 300; line-height: 1.55; color: var(--ink-3); }
@@ -147,7 +151,7 @@ a { color: inherit; text-decoration: none; }
 .link:hover { text-decoration-color: var(--gold); }
 
 /* quiet: words at 45% that come forward under the hand */
-.quiet { color: rgb(243 244 246 / 0.45); transition: color var(--d-fast) var(--ease); }
+.quiet { color: var(--ink-4); transition: color var(--d-fast) var(--ease); }
 .quiet:hover, .quiet[aria-current="page"], .quiet[aria-checked="true"] { color: var(--ink); }
 
 /* text tabs: an underline moves, nothing else */
@@ -169,7 +173,7 @@ a { color: inherit; text-decoration: none; }
   transition: background var(--d-fast) var(--ease), border-color var(--d-fast) var(--ease), transform var(--d-fast) var(--ease);
   -webkit-tap-highlight-color: transparent;
 }
-.btn:hover { border-color: rgb(255 255 255 / 0.28); }
+.btn:hover { border-color: var(--hairline-hover); }
 .btn:active { transform: scale(0.98); }
 .btn:disabled, .btn[aria-disabled="true"] { opacity: 0.45; cursor: not-allowed; transform: none; }
 /* the signal: flat champagne gold, only where a person commits */
@@ -182,7 +186,7 @@ a { color: inherit; text-decoration: none; }
   font-weight: 350; transition: border-color var(--d-fast) var(--ease);
 }
 .field::placeholder { color: var(--ink-4); }
-.field:hover { border-color: rgb(255 255 255 / 0.24); }
+.field:hover { border-color: var(--hairline-hover); }
 .field:focus, .field:focus-visible { outline: none; border-color: var(--gold-line); }
 textarea.field { display: block; resize: vertical; min-height: 7.5rem; line-height: 1.6; }
 
