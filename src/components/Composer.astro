@@ -1,0 +1,126 @@
+---
+/** the composer: one quiet panel for writing a post. it opens from the gold
+    "write" pill, rises 12px into place, and leaves the same way. no account. */
+---
+<dialog class="composer" data-composer aria-labelledby="w-h" aria-describedby="w-note">
+  <form class="w-form" data-w-form method="dialog" novalidate>
+    <header class="w-head">
+      <h2 id="w-h" class="serif">write something</h2>
+      <button type="button" class="w-close" data-w-close aria-label="close">
+        <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" focusable="false"><path d="M3.5 3.5l9 9m0-9l-9 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" fill="none" /></svg>
+      </button>
+    </header>
+
+    <label for="w-title" class="visually-hidden">title</label>
+    <input id="w-title" class="w-title serif" name="title" maxlength="120" autocomplete="off" spellcheck="true" placeholder="a title" required />
+
+    <label for="w-text" class="visually-hidden">your words</label>
+    <textarea id="w-text" class="w-text" name="text" maxlength="5000" autocomplete="off" spellcheck="true" required
+      placeholder="plain words. a blank line starts a new paragraph."></textarea>
+
+    <div class="w-named" data-w-named hidden>
+      <label for="w-name" class="visually-hidden">your name</label>
+      <input id="w-name" class="field" name="name" maxlength="32" autocomplete="nickname" placeholder="a name to sign with" />
+      <p class="w-fine">a key made on this device signs it, so no one else can use your mark<span class="w-tag" data-w-tag></span>. it never leaves this browser.</p>
+    </div>
+
+    <p class="w-status" data-w-status role="status" aria-live="polite"></p>
+
+    <footer class="w-foot">
+      <p id="w-note" class="w-fine">
+        <span data-w-who>posting as <em>anonymous</em></span>{" · "}<button type="button" class="w-linkish" data-w-toggle>sign with a name</button>
+        <span class="w-left" data-w-left></span>
+      </p>
+      <div class="w-actions">
+        <button type="button" class="btn" data-w-close>not now</button>
+        <button type="submit" class="btn btn--signal" data-w-submit>publish</button>
+      </div>
+    </footer>
+  </form>
+</dialog>
+
+<style>
+  /* a flat panel on a flat dim. it rises into place on a hard deceleration and
+     leaves faster than it came — nothing floats, bounces or glows. */
+  .composer {
+    width: min(100% - 2 * var(--gutter), 40rem); max-height: min(88dvh, 44rem);
+    margin: auto; padding: 0; border: 1px solid var(--hairline-strong); border-radius: var(--r-surface);
+    background: rgb(12 13 15); color: var(--ink); overflow: hidden;
+    opacity: 0; transform: translateY(12px);
+    transition: opacity var(--d-fast) var(--ease), transform var(--d-fast) var(--ease),
+      overlay var(--d-fast) allow-discrete, display var(--d-fast) allow-discrete;
+  }
+  .composer[open] {
+    opacity: 1; transform: none;
+    transition: opacity var(--d-base) var(--ease), transform var(--d-slow) var(--ease),
+      overlay var(--d-slow) allow-discrete, display var(--d-slow) allow-discrete;
+  }
+  @starting-style { .composer[open] { opacity: 0; transform: translateY(12px); } }
+  .composer::backdrop {
+    background: rgb(4 5 6 / 0);
+    transition: background var(--d-fast) var(--ease), overlay var(--d-fast) allow-discrete, display var(--d-fast) allow-discrete;
+  }
+  .composer[open]::backdrop { background: rgb(4 5 6 / 0.74); transition-duration: var(--d-base); }
+  @starting-style { .composer[open]::backdrop { background: rgb(4 5 6 / 0); } }
+
+  .w-form { display: flex; flex-direction: column; gap: var(--s-4); padding: var(--s-5) var(--s-6) var(--s-5); max-height: inherit; }
+  .w-head { display: flex; align-items: center; justify-content: space-between; gap: var(--s-4); }
+  .w-head h2 { font-size: var(--t-lg); line-height: 1; color: var(--ink-3); }
+  .w-close {
+    display: grid; place-items: center; width: 36px; height: 36px; margin-right: calc(-1 * var(--s-2));
+    border: 0; border-radius: var(--r-control); background: none; color: var(--ink-4);
+    transition: color var(--d-fast) var(--ease), background var(--d-fast) var(--ease);
+  }
+  .w-close:hover { color: var(--ink); background: rgb(255 255 255 / 0.05); }
+
+  /* the writing surface: no boxes, a hairline under the title, words first */
+  .w-title {
+    width: 100%; padding: 0 0 var(--s-3); border: 0; border-bottom: 1px solid var(--hairline-strong); border-radius: 0;
+    background: none; color: var(--ink); font-size: var(--t-xl); line-height: 1.1;
+    transition: border-color var(--d-fast) var(--ease);
+  }
+  .w-title:focus { outline: none; border-bottom-color: var(--gold-line); }
+  .w-title::placeholder, .w-text::placeholder { color: var(--ink-4); }
+  .w-text {
+    flex: 1; width: 100%; min-height: 12rem; padding: 0; border: 0; background: none; resize: none;
+    color: var(--ink-2); font-size: var(--t-base); font-weight: 350; line-height: 1.7;
+  }
+  .w-text:focus { outline: none; }
+  .w-text:focus-visible { outline: none; }
+
+  .w-named { display: grid; gap: var(--s-2); animation: arrive var(--d-base) var(--ease) both; }
+  .w-tag { font-family: var(--font-mono); color: var(--gold); }
+  .w-status { min-height: 1.3em; font-size: var(--t-sm); font-weight: 300; color: var(--ink-3); }
+  .w-status.err { color: var(--danger); }
+  .w-status.ok { color: var(--ok); }
+
+  .w-foot { display: flex; align-items: center; justify-content: space-between; gap: var(--s-4); flex-wrap: wrap; padding-top: var(--s-4); border-top: 1px solid var(--hairline); }
+  .w-fine { font-size: 0.8125rem; font-weight: 300; line-height: 1.55; color: var(--ink-3); }
+  .w-fine em { font-family: var(--font-display); font-size: 1.1em; color: var(--ink-2); }
+  .w-linkish {
+    background: none; border: 0; padding: 0; color: var(--ink-3); font-size: inherit;
+    text-decoration: underline; text-decoration-color: var(--hairline-strong); text-underline-offset: 0.2em;
+    transition: color var(--d-fast) var(--ease), text-decoration-color var(--d-fast) var(--ease);
+  }
+  .w-linkish:hover { color: var(--ink); text-decoration-color: var(--gold); }
+  .w-left { margin-left: var(--s-2); font-variant-numeric: tabular-nums; }
+  .w-left.warn { color: var(--gold); }
+  .w-left.over { color: var(--danger); }
+  .w-actions { display: flex; gap: var(--s-3); margin-left: auto; }
+  [data-w-submit][aria-busy="true"] { color: transparent; position: relative; }
+  [data-w-submit][aria-busy="true"]::after { content: "sealing"; position: absolute; color: var(--gold-ink); }
+
+  /* phones: a sheet from the bottom edge, same motion, full-width commit */
+  @media (max-width: 40rem) {
+    .composer {
+      width: 100%; max-width: none; max-height: 92dvh; margin: auto 0 0;
+      border-radius: var(--r-surface) var(--r-surface) 0 0; border-bottom: 0;
+      transform: translateY(24px);
+    }
+    @starting-style { .composer[open] { transform: translateY(24px); } }
+    .w-form { padding: var(--s-5) var(--gutter) calc(var(--s-5) + env(safe-area-inset-bottom)); }
+    .w-title { font-size: var(--t-lg); }
+    .w-actions { width: 100%; }
+    .w-actions .btn { flex: 1; }
+  }
+</style>

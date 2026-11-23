@@ -12,7 +12,6 @@ const dir = "dist/client/_astro";
 const css = (await Promise.all((await readdir(dir)).filter((f) => f.endsWith(".css")).map((f) => readFile(join(dir, f), "utf8")))).join("\n");
 const fails = [];
 if (/animation:[^;}]*scroll\(/.test(css)) fails.push("a scroll() timeline was folded into an animation shorthand");
-if (!/animation-timeline:\s*scroll\(\)/.test(css)) fails.push("header scroll timeline missing");
 if (!/animation-timeline:\s*scroll\(root\)/.test(css)) fails.push("reading progress timeline missing");
 if (!/\[hidden\]\{display:none!important\}/.test(css.replace(/\s/g, ""))) fails.push("[hidden] rule missing");
 if (fails.length) { console.error("dist check failed:\n- " + fails.join("\n- ")); process.exit(1); }

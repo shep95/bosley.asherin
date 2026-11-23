@@ -24,6 +24,11 @@
       "source": "/for/:path*",
       "destination": "/about",
       "permanent": true
+    },
+    {
+      "source": "/rss.xml",
+      "destination": "/",
+      "permanent": true
     }
   ],
   "headers": [

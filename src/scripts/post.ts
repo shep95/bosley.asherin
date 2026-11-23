@@ -22,7 +22,11 @@ export function initPost(): void {
     });
     io.observe(mark);
   }
+  wireShare();
+}
 
+/** copy the link on a desktop; the system share sheet on a phone. */
+export function wireShare(): void {
   const share = document.querySelector<HTMLButtonElement>("[data-share]");
   const label = share?.querySelector<HTMLElement>("[data-share-label]");
   share?.addEventListener("click", async () => {

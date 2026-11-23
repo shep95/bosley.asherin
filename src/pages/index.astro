@@ -6,8 +6,8 @@ import { getPosts } from "../lib/posts";
 const posts = await getPosts();
 const promises = [
   ["no sign-ups", "nothing to join. read, and if you want, say something."],
-  ["anonymous", "comments say anonymous unless you choose a name."],
-  ["no database", "posts are files in the code. comments are small text files."],
+  ["anonymous", "posts and comments say anonymous unless you choose a name."],
+  ["no database", "the writing is files in the code. what visitors say is small text files."],
   ["no tracking", "no cookies, no analytics, no ads, nothing following you."],
 ];
 ---
@@ -26,26 +26,22 @@ const promises = [
   <section class="feed wrap" aria-labelledby="feed-h">
     <div class="feed-head">
       <h2 id="feed-h" class="eyebrow">the writing</h2>
-      {posts.length > 1 && (
-        <div class="tabs" role="radiogroup" aria-label="order the writing">
-          <button type="button" class="quiet tab" role="radio" aria-checked="true" data-mode="latest">latest</button>
-          <button type="button" class="quiet tab" role="radio" aria-checked="false" data-mode="foryou">for you</button>
-        </div>
-      )}
+      <div class="tabs" role="radiogroup" aria-label="order the writing" hidden={posts.length < 2}>
+        <button type="button" class="quiet tab" role="radio" aria-checked="true" data-mode="latest">latest</button>
+        <button type="button" class="quiet tab" role="radio" aria-checked="false" data-mode="foryou">for you</button>
+      </div>
     </div>
     <p class="foryou-note meta" hidden>“for you” learns from what you finish reading, on this device only. nothing about it is sent anywhere.</p>
 
-    {posts.length === 0 ? (
-      <div class="empty reveal" data-i="4">
-        <h3 class="serif">nothing has been written here yet.</h3>
-        <p class="meta">the first words are on their way. follow with <a class="link" href="/rss.xml">rss</a> — no account, no email.</p>
-      </div>
-    ) : (
-      <ol class="list" data-feed>
-        {posts.map((post, i) => <li><PostCard post={post} index={i + 4} number={posts.length - i} /></li>)}
-      </ol>
-    )}
-    {posts.length > 0 && <p class="end meta">that's everything, for now.</p>}
+    <div class="empty reveal" data-i="4" data-empty hidden={posts.length > 0}>
+      <h3 class="serif">nothing has been written here yet.</h3>
+      <p class="meta">the first words could be yours.</p>
+      <p><button type="button" class="btn btn--signal" data-compose>write the first post</button></p>
+    </div>
+    <ol class="list" data-feed hidden={posts.length === 0}>
+      {posts.map((post, i) => <li><PostCard post={post} index={i + 4} number={posts.length - i} /></li>)}
+    </ol>
+    <p class="end meta" data-end hidden={posts.length === 0}>that's everything, for now.</p>
   </section>
 </Base>
 

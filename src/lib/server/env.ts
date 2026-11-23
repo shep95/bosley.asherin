@@ -1,5 +1,6 @@
 import { randomBytes, timingSafeEqual, createHash } from "node:crypto";
 import { blobStore, memoryStore, type CommentStore } from "./store";
+import { blobPostStore, memoryPostStore, type PostStore } from "./visitor-posts";
 
 /**
  * runtime configuration. three variables, all set in vercel project settings:
@@ -29,6 +30,14 @@ export function commentStore(): CommentStore | null {
   if (token) return blobStore(token, env("BLOB_ACCESS") === "public" ? "public" : "private");
   if (isProd()) return null;
   return (mem ??= memoryStore());
+}
+
+let memPosts: PostStore | undefined;
+export function postStore(): PostStore | null {
+  const token = env("BLOB_READ_WRITE_TOKEN");
+  if (token) return blobPostStore(token, env("BLOB_ACCESS") === "public" ? "public" : "private");
+  if (isProd()) return null;
+  return (memPosts ??= memoryPostStore());
 }
 
 export function isAdmin(header: string | null): boolean {

@@ -13,7 +13,6 @@ ai-training and ai-answer crawlers are disallowed in robots.txt. please respect 
 - [about](https://bosley.asherin.com/about)
 - [privacy](https://bosley.asherin.com/privacy): what is stored (comment words, chosen name, minute posted) and what is not (ip, device, location)
 - [conversation rules](https://bosley.asherin.com/rules)
-- [rss](https://bosley.asherin.com/rss.xml)
 
 ## do not cite
 
