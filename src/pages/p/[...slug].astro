@@ -1,0 +1,148 @@
+---
+import { render } from "astro:content";
+import { Image } from "astro:assets";
+import Base from "../../layouts/Base.astro";
+import Comments from "../../components/Comments.astro";
+import { formatDate, getPosts, postUrl, readingMinutes, type Post } from "../../lib/posts";
+import { SITE } from "../../lib/site";
+
+export async function getStaticPaths() {
+  const posts = await getPosts();
+  return posts.map((post, i) => ({
+    params: { slug: post.id },
+    props: { post, newer: posts[i - 1] ?? null, older: posts[i + 1] ?? null },
+  }));
+}
+
+interface Props { post: Post; newer: Post | null; older: Post | null }
+const { post, newer, older } = Astro.props;
+const { Content } = await render(post);
+const { title, description, date, updated, tags, cover, coverAlt, comments } = post.data;
+const url = new URL(postUrl(post), SITE.url).href;
+const mins = readingMinutes(post.body);
+
+const jsonLd = [
+  {
+    "@type": "BlogPosting",
+    "@id": `${url}#post`,
+    mainEntityOfPage: url,
+    url,
+    headline: title,
+    description,
+    datePublished: date.toISOString(),
+    dateModified: (updated ?? date).toISOString(),
+    inLanguage: SITE.lang,
+    keywords: tags.join(", "),
+    wordCount: (post.body ?? "").split(/\s+/).filter(Boolean).length,
+    timeRequired: `PT${mins}M`,
+    author: { "@id": `${SITE.url}/#author` },
+    publisher: { "@id": `${SITE.url}/#org` },
+    isPartOf: { "@id": `${SITE.url}/#site` },
+    ...(comments ? { discussionUrl: `${url}#conversation` } : {}),
+  },
+  {
+    "@type": "BreadcrumbList",
+    itemListElement: [
+      { "@type": "ListItem", position: 1, name: "bosley", item: SITE.url },
+      { "@type": "ListItem", position: 2, name: title, item: url },
+    ],
+  },
+];
+---
+<Base path={postUrl(post)} title={title} description={description} type="article" published={date} modified={updated ?? date} tags={tags} jsonLd={jsonLd} bodyClass="reading">
+  <div class="progress" aria-hidden="true"></div>
+  <article class="post" data-post={post.id} data-tags={tags.join(" ")}>
+    <header class="prose-col head">
+      <p class="eyebrow reveal"><time datetime={date.toISOString()}>{formatDate(date)}</time> · {mins} min read</p>
+      <h1 class="display reveal" data-i="1">{title}</h1>
+      <p class="lede muted reveal" data-i="2">{description}</p>
+      {tags.length > 0 && (
+        <ul class="tags reveal" data-i="3">{tags.map((t) => <li><a class="chip" href={`/tags/${t}`}>#{t}</a></li>)}</ul>
+      )}
+    </header>
+
+    {cover && (
+      <figure class="cover wrap reveal" data-i="3">
+        <Image src={cover} alt={coverAlt ?? ""} widths={[640, 1024, 1600]} sizes="(min-width: 72rem) 72rem, 100vw" loading="eager" fetchpriority="high" />
+      </figure>
+    )}
+
+    <div class="prose prose-col reveal" data-i="4">
+      <Content />
+    </div>
+    <div class="read-mark" aria-hidden="true"></div>
+
+    <footer class="prose-col end">
+      <div class="share">
+        <button class="btn btn--ghost" type="button" data-share data-url={url} data-title={title}>
+          <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path d="M9 15l6-6M10.5 6.5l1-1a4 4 0 015.7 5.7l-1 1M13.5 17.5l-1 1a4 4 0 01-5.7-5.7l1-1" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+          <span data-share-label>copy link</span>
+        </button>
+      </div>
+      <nav class="pager" aria-label="more writing">
+        {newer ? <a class="pg" href={postUrl(newer)}><span class="eyebrow">newer</span><span class="display">{newer.data.title}</span></a> : <span></span>}
+        {older ? <a class="pg pg--older" href={postUrl(older)}><span class="eyebrow">older</span><span class="display">{older.data.title}</span></a> : <span></span>}
+      </nav>
+    </footer>
+  </article>
+
+  {comments && <Comments post={post.id} />}
+</Base>
+
+<script>
+  import { initPost } from "../../scripts/post";
+  initPost();
+</script>
+
+<style>
+  .progress {
+    position: fixed; top: 0; left: 0; right: 0; height: 2px; z-index: 30; transform-origin: left; transform: scaleX(0);
+    background: linear-gradient(90deg, var(--gold-deep), var(--gold-bright));
+    box-shadow: 0 0 12px var(--gold-glow);
+  }
+  @supports (animation-timeline: scroll()) {
+    .progress { animation: grow linear both; animation-timeline: scroll(root); }
+    @keyframes grow { to { transform: scaleX(1); } }
+  }
+  .head { padding-top: clamp(var(--s-7), 8vw, var(--s-9)); }
+  .head h1 { font-size: var(--t-3xl); margin-top: var(--s-3); }
+  .lede { font-size: var(--t-md); margin-top: var(--s-4); line-height: 1.5; }
+  .tags { display: flex; flex-wrap: wrap; gap: var(--s-2); list-style: none; padding: 0; margin-top: var(--s-5); }
+  .cover { margin-top: var(--s-7); }
+  .cover :global(img) { width: 100%; border-radius: var(--radius-lg); box-shadow: var(--shadow-3); }
+  .prose { margin-top: var(--s-7); }
+
+  .prose :global(> * + *) { margin-top: 1.15em; }
+  .prose :global(h2) { font-family: var(--font-display); font-weight: 400; font-size: var(--t-2xl); line-height: 1.15; margin-top: 2em; }
+  .prose :global(h3) { font-size: var(--t-md); font-weight: 600; margin-top: 1.8em; }
+  .prose :global(p), .prose :global(li) { color: oklch(0.9 0.022 78); }
+  .prose :global(strong) { color: var(--ink); font-weight: 650; }
+  .prose :global(a) { color: var(--gold-bright); }
+  .prose :global(ul), .prose :global(ol) { padding-left: 1.3em; }
+  .prose :global(li::marker) { color: var(--gold-deep); }
+  .prose :global(blockquote) {
+    border-left: 2px solid var(--gold); padding: 0.2em 0 0.2em 1.2em; font-family: var(--font-display);
+    font-size: var(--t-lg); line-height: 1.35; color: var(--ink); font-style: italic;
+  }
+  .prose :global(hr) { border: 0; height: 1px; margin-block: 3em; background: linear-gradient(90deg, transparent, var(--line), transparent); }
+  .prose :global(code) { font-family: var(--font-mono); font-size: 0.88em; background: var(--surface); padding: 0.1em 0.35em; border-radius: 4px; border: 1px solid var(--line-soft); }
+  .prose :global(pre) { background: var(--bg-deep); border: 1px solid var(--line-soft); border-radius: var(--radius); padding: var(--s-4); overflow-x: auto; }
+  .prose :global(pre code) { background: none; border: 0; padding: 0; color: oklch(0.86 0.04 80); }
+  .prose :global(img) { border-radius: var(--radius); margin-inline: auto; }
+  .prose :global(figure figcaption) { font-size: var(--t-sm); color: var(--ink-faint); text-align: center; margin-top: var(--s-2); }
+  .prose :global(table) { width: 100%; border-collapse: collapse; font-size: var(--t-sm); }
+  .prose :global(th), .prose :global(td) { border-bottom: 1px solid var(--line-soft); padding: var(--s-2) var(--s-3); text-align: left; }
+
+  .read-mark { height: 1px; }
+  .end { margin-top: var(--s-8); display: grid; gap: var(--s-6); }
+  .share { display: flex; justify-content: center; }
+  .pager { display: grid; grid-template-columns: 1fr 1fr; gap: var(--s-4); }
+  .pg {
+    display: grid; gap: var(--s-1); padding: var(--s-4) var(--s-5); text-decoration: none;
+    border: 1px solid var(--line-soft); border-radius: var(--radius-lg); background: var(--surface);
+    transition: border-color var(--d-base) var(--ease-out), transform var(--d-base) var(--ease-out);
+  }
+  .pg:hover { border-color: var(--gold-deep); transform: translateY(-2px); }
+  .pg .display { font-size: var(--t-md); line-height: 1.2; }
+  .pg--older { text-align: right; }
+</style>

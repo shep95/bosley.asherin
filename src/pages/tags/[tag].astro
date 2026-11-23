@@ -1,0 +1,24 @@
+---
+import Base from "../../layouts/Base.astro";
+import PostCard from "../../components/PostCard.astro";
+import { allTags, getPosts, type Post } from "../../lib/posts";
+
+export async function getStaticPaths() {
+  const posts = await getPosts();
+  return allTags(posts).map(({ tag }) => ({ params: { tag }, props: { tag, posts: posts.filter((p) => p.data.tags.includes(tag)) } }));
+}
+interface Props { tag: string; posts: Post[] }
+const { tag, posts } = Astro.props;
+---
+<Base path={`/tags/${tag}`} title={`#${tag}`} description={`writing on bosley about ${tag}.`}>
+  <section class="wrap page">
+    <p class="eyebrow reveal"><a href="/tags">topics</a> /</p>
+    <h1 class="display reveal" data-i="1">#{tag}</h1>
+    <ol class="list">{posts.map((post, i) => <li><PostCard post={post} index={i + 1} /></li>)}</ol>
+  </section>
+</Base>
+<style>
+  .page { padding-top: var(--s-8); }
+  h1 { font-size: var(--t-3xl); margin: var(--s-2) 0 var(--s-6); color: var(--gold); }
+  .list { list-style: none; padding: 0; display: grid; gap: var(--s-4); }
+</style>

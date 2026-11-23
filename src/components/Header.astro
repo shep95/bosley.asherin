@@ -1,0 +1,65 @@
+---
+import Brandmark from "./Brandmark.astro";
+const here = Astro.url.pathname.replace(/\/$/, "") || "/";
+const links = [
+  { href: "/", label: "writing" },
+  { href: "/tags", label: "topics" },
+  { href: "/about", label: "about" },
+];
+---
+<header class="site-header">
+  <div class="wrap bar">
+    <a class="brand" href="/" aria-label="bosley, home">
+      <Brandmark size={30} />
+      <span class="word display">bosley</span>
+    </a>
+    <nav aria-label="primary">
+      <ul>
+        {links.map((l) => (
+          <li><a href={l.href} aria-current={here === l.href ? "page" : undefined}>{l.label}</a></li>
+        ))}
+        <li><a href="/rss.xml" class="rss" aria-label="rss feed" title="follow with rss — no account needed">
+          <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path fill="currentColor" d="M5 19a2 2 0 1 1 0-4 2 2 0 0 1 0 4Zm-2-9.5V7a14 14 0 0 1 14 14h-2.5A11.5 11.5 0 0 0 3 9.5Zm0-5V2a19 19 0 0 1 19 19h-2.5A16.5 16.5 0 0 0 3 4.5Z"/></svg>
+        </a></li>
+      </ul>
+    </nav>
+  </div>
+</header>
+
+<style>
+  .site-header {
+    position: sticky; top: 0; z-index: 20;
+    border-bottom: 1px solid transparent;
+    background: oklch(0.155 0.012 60 / 0.72);
+    backdrop-filter: blur(14px) saturate(1.2);
+    -webkit-backdrop-filter: blur(14px) saturate(1.2);
+  }
+  /* the bar settles as you scroll: tighter, with a hairline — driven by scroll, no script */
+  @supports (animation-timeline: scroll()) {
+    .site-header { animation: settle linear both; animation-timeline: scroll(); animation-range: 0 120px; }
+    @keyframes settle { to { border-bottom-color: var(--line-soft); background: oklch(0.14 0.012 60 / 0.86); } }
+    .bar { animation: tighten linear both; animation-timeline: scroll(); animation-range: 0 120px; }
+    @keyframes tighten { from { height: 4.5rem; } to { height: 3.5rem; } }
+  }
+  .bar { display: flex; align-items: center; justify-content: space-between; height: 4rem; }
+  .brand { display: inline-flex; align-items: center; gap: var(--s-3); text-decoration: none; color: var(--ink); }
+  .brand :global(.brandmark) { transition: transform var(--d-base) var(--ease-spring); }
+  .brand:hover :global(.brandmark) { transform: rotate(-6deg) scale(1.06); }
+  .word { font-size: 1.6rem; line-height: 1; letter-spacing: 0; }
+  ul { display: flex; align-items: center; gap: var(--s-1); list-style: none; padding: 0; }
+  nav a {
+    position: relative; display: inline-flex; align-items: center; min-height: 44px; padding: 0 var(--s-3);
+    color: var(--ink-muted); text-decoration: none; font-size: var(--t-sm); letter-spacing: 0.02em;
+  }
+  nav a::after {
+    content: ""; position: absolute; left: var(--s-3); right: var(--s-3); bottom: 10px; height: 1px;
+    background: var(--gold); transform: scaleX(0); transform-origin: left;
+    transition: transform var(--d-base) var(--ease-emph);
+  }
+  nav a:hover { color: var(--ink); }
+  nav a:hover::after, nav a[aria-current="page"]::after { transform: scaleX(1); }
+  nav a[aria-current="page"] { color: var(--ink); }
+  .rss { color: var(--gold-deep); }
+  .rss:hover { color: var(--gold); }
+  @media (max-width: 30rem) { .word { display: none; } nav a { padding: 0 var(--s-2); } }
+</style>

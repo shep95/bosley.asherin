@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: ["main", "claude/**"]
+    branches: ["**"]
   pull_request:
     branches: ["main"]
 
@@ -15,14 +15,9 @@ permissions:
 
 jobs:
   web:
-    name: Typecheck, lint, build
+    name: Images, typecheck, tests, build
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    env:
-      # The build only needs *public* values; placeholders keep CI independent of secrets.
-      VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL || 'https://example.supabase.co' }}
-      VITE_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.VITE_SUPABASE_PUBLISHABLE_KEY || 'ci-placeholder' }}
-      VITE_SUPABASE_PROJECT_ID: ${{ secrets.VITE_SUPABASE_PROJECT_ID || 'example' }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -30,10 +25,14 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      # fails if any committed image still carries exif, gps, xmp or iptc data
+      - run: npm run images:check
       - run: npm run typecheck
-      - run: npm run lint
+      - run: npm test
       - run: npm run build
-      - run: npm audit --omit=dev --audit-level=high
+      - name: no published image carries metadata
+        run: node scripts/scrub-images.mjs --check --roots=dist/client
+      - run: npm audit --audit-level=high
 
   secrets:
     name: Secret scan
@@ -46,17 +45,3 @@ jobs:
       - uses: gitleaks/gitleaks-action@v2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-  edge-functions:
-    name: Edge functions typecheck
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@v4
-      - uses: denoland/setup-deno@v2
-        with:
-          deno-version: v2.x
-      - run: |
-          for f in supabase/functions/*/index.ts; do
-            echo "== $f"; deno check "$f"
-          done

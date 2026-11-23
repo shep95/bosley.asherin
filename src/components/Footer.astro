@@ -1,0 +1,24 @@
+---
+const year = new Date().getUTCFullYear();
+---
+<footer class="site-footer">
+  <hr class="rule" />
+  <div class="wrap foot">
+    <p class="faint">no accounts · no ads · no tracking · no database. <a href="/privacy">how that works</a>.</p>
+    <ul>
+      <li><a href="/privacy">privacy</a></li>
+      <li><a href="/rules">conversation rules</a></li>
+      <li><a href="/rss.xml">rss</a></li>
+      <li><a href="/.well-known/security.txt">security</a></li>
+    </ul>
+    <p class="faint small">© {year} zorak corp</p>
+  </div>
+</footer>
+<style>
+  .site-footer { margin-top: var(--s-9); padding-bottom: var(--s-7); }
+  .foot { display: grid; gap: var(--s-3); padding-top: var(--s-6); font-size: var(--t-sm); }
+  ul { display: flex; flex-wrap: wrap; gap: var(--s-4); list-style: none; padding: 0; }
+  ul a { color: var(--ink-muted); text-decoration: none; }
+  ul a:hover { color: var(--gold-bright); }
+  .small { font-size: var(--t-xs); }
+</style>

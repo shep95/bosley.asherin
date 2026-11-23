@@ -1,0 +1,60 @@
+---
+import Base from "../layouts/Base.astro";
+const swatches = [
+  ["bg", "--bg"], ["surface", "--surface"], ["raised", "--surface-raised"], ["line", "--line"],
+  ["ink", "--ink"], ["ink-muted", "--ink-muted"], ["ink-faint", "--ink-faint"],
+  ["gold-deep", "--gold-deep"], ["gold", "--gold"], ["gold-bright", "--gold-bright"],
+];
+const scale = [["3xl", "a quiet room"], ["2xl", "the conversation"], ["xl", "a post title"], ["lg", "a pull quote"], ["md", "a lede sentence"], ["base", "body text for long reading"], ["sm", "meta and controls"], ["xs", "eyebrows and tags"]];
+---
+<Base path="/styleguide" title="styleguide" description="bosley design tokens and components." noindex>
+  <section class="wrap sg">
+    <p class="eyebrow">design system</p>
+    <h1 class="display">calm. moody. golden brown.</h1>
+
+    <h2 class="eyebrow">color</h2>
+    <ul class="sw">{swatches.map(([n, v]) => <li><span class={`chipc c-${n}`}></span><code>{v}</code></li>)}</ul>
+
+    <h2 class="eyebrow">type</h2>
+    <div class="scale">{scale.map(([k, s]) => <p class={`t-${k} ${k === "3xl" || k === "2xl" || k === "xl" || k === "lg" ? "display" : ""}`}><span class="faint">{k}</span> {s}</p>)}</div>
+
+    <h2 class="eyebrow">controls</h2>
+    <div class="row">
+      <button class="btn btn--gold" type="button">post</button>
+      <button class="btn" type="button">secondary</button>
+      <button class="btn btn--ghost" type="button">ghost</button>
+      <button class="btn" type="button" disabled>disabled</button>
+      <a class="chip" href="#">#topic</a>
+    </div>
+    <div class="row"><input class="field" placeholder="a field" /></div>
+    <div class="row"><textarea class="field" placeholder="say something"></textarea></div>
+
+    <h2 class="eyebrow">motion</h2>
+    <dl class="motion">
+      <dt>instant · 80ms</dt><dd>key echo, press</dd>
+      <dt>fast · 150ms</dt><dd>hover, chips, ink line</dd>
+      <dt>base · 240ms</dt><dd>cards, toggles, sheets</dd>
+      <dt>slow · 400ms</dt><dd>page transitions, reveal</dd>
+      <dt>hero · 700ms</dt><dd>first impression, once</dd>
+    </dl>
+  </section>
+</Base>
+<style>
+  .sg { padding-block: var(--s-8); display: grid; gap: var(--s-5); }
+  h1 { font-size: var(--t-3xl); }
+  h2 { margin-top: var(--s-6); }
+  .sw { display: grid; grid-template-columns: repeat(auto-fill, minmax(9rem, 1fr)); gap: var(--s-3); list-style: none; padding: 0; }
+  .sw li { display: grid; gap: var(--s-2); font-size: var(--t-xs); color: var(--ink-faint); }
+  .chipc { height: 4.5rem; border-radius: var(--radius); border: 1px solid var(--line-soft); }
+  .c-bg { background: var(--bg); } .c-surface { background: var(--surface); } .c-raised { background: var(--surface-raised); } .c-line { background: var(--line); }
+  .c-ink { background: var(--ink); } .c-ink-muted { background: var(--ink-muted); } .c-ink-faint { background: var(--ink-faint); }
+  .c-gold-deep { background: var(--gold-deep); } .c-gold { background: var(--gold); } .c-gold-bright { background: var(--gold-bright); }
+  .scale { display: grid; gap: var(--s-2); }
+  .scale span { font-family: var(--font-mono); font-size: var(--t-xs); margin-right: var(--s-3); }
+  .t-3xl { font-size: var(--t-3xl); } .t-2xl { font-size: var(--t-2xl); } .t-xl { font-size: var(--t-xl); } .t-lg { font-size: var(--t-lg); }
+  .t-md { font-size: var(--t-md); } .t-base { font-size: var(--t-base); } .t-sm { font-size: var(--t-sm); } .t-xs { font-size: var(--t-xs); }
+  .row { display: flex; flex-wrap: wrap; gap: var(--s-3); align-items: center; max-width: 40rem; }
+  .motion { display: grid; grid-template-columns: max-content 1fr; gap: var(--s-2) var(--s-5); font-size: var(--t-sm); }
+  .motion dt { color: var(--gold); font-family: var(--font-mono); }
+  .motion dd { color: var(--ink-muted); }
+</style>

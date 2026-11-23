@@ -1,0 +1,22 @@
+---
+import Base from "./Base.astro";
+interface Props { path: string; title: string; description: string; eyebrow: string; noindex?: boolean }
+const { eyebrow, ...rest } = Astro.props;
+---
+<Base {...rest}>
+  <article class="prose-col page">
+    <p class="eyebrow reveal">{eyebrow}</p>
+    <h1 class="display reveal" data-i="1">{rest.title}</h1>
+    <div class="body reveal" data-i="2"><slot /></div>
+  </article>
+</Base>
+<style>
+  .page { padding-top: var(--s-8); }
+  h1 { font-size: var(--t-2xl); margin: var(--s-3) 0 var(--s-6); }
+  .body :global(> * + *) { margin-top: 1.1em; }
+  .body :global(h2) { font-family: var(--font-display); font-weight: 400; font-size: var(--t-xl); margin-top: 1.8em; }
+  .body :global(p), .body :global(li) { color: oklch(0.88 0.022 78); }
+  .body :global(ul) { padding-left: 1.2em; }
+  .body :global(li::marker) { color: var(--gold-deep); }
+  .body :global(strong) { color: var(--ink); }
+</style>
