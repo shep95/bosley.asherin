@@ -15,7 +15,9 @@ export function worker(target: string) {
     job = (async () => {
       const res = await fetch(`/api/challenge?post=${encodeURIComponent(target)}`);
       if (!res.ok) throw new Error(res.status === 503 ? "resting" : "challenge");
-      const ch = (await res.json()) as { challenge: string; bits: number };
+      const ch = (await res.json()) as { challenge?: unknown; bits?: unknown };
+      // never spin on a malformed answer: a missing bit count would mean searching forever
+      if (typeof ch.challenge !== "string" || typeof ch.bits !== "number" || ch.bits < 1 || ch.bits > 24) throw new Error("challenge");
       return { challenge: ch.challenge, nonce: await solve(ch.challenge, ch.bits, { signal }) };
     })();
     job.catch(() => { job = null; });

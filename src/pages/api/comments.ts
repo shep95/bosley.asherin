@@ -24,7 +24,7 @@ export const GET: APIRoute = async ({ url }) => {
   try {
     const rows = await store.list(post, PAGE);
     return json({ comments: rows.map(toPublic) }, 200, {
-      "cache-control": "public, max-age=0, s-maxage=10, stale-while-revalidate=60",
+      "cache-control": "no-store",
     });
   } catch {
     return resting();
